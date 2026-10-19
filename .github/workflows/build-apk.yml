@@ -110,9 +110,12 @@ jobs:
           APK_FILE="build-output/cell-agent-mobile-v0.1.5.apk"
           if [ -f "$APK_FILE" ]; then
             echo "Publishing release with APK: $APK_FILE"
-            gh release create v0.1.5 "$APK_FILE" \
-              --title "CELL AGENT Mobile v0.1.5" \
-              --notes "### CELL AGENT Mobile v0.1.5
+            if gh release view v0.1.5 >/dev/null 2>&1; then
+              gh release upload v0.1.5 "$APK_FILE" --clobber
+            else
+              gh release create v0.1.5 "$APK_FILE" \
+                --title "CELL AGENT Mobile v0.1.5" \
+                --notes "### CELL AGENT Mobile v0.1.5
 
           APK Android pronto para instalação direta no telemóvel.
 
@@ -125,6 +128,6 @@ jobs:
           #### Como instalar no telemóvel:
           1. Baixe o ficheiro **cell-agent-mobile-v0.1.5.apk** abaixo diretamente no seu telemóvel Android.
           2. Abra o arquivo descarregado e confirme a instalação (ative 'Permitir desta fonte' se solicitado).
-          3. Abra o **CELL AGENT** e aceda à sua conta!" \
-              --clobber || echo "Release already exists or updated."
+          3. Abra o **CELL AGENT** e aceda à sua conta!"
+            fi
           fi
