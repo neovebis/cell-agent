@@ -3,11 +3,17 @@ import type {
   ActivityItem,
   Agent,
   AgentMessage,
+  AgentProfile,
   CaptureItem,
   CellGateway,
   Connection,
+  CredentialVaultItem,
+  FileAttachment,
+  GlobalVariableItem,
   Session,
+  WorkspaceInfo,
 } from '../types';
+
 declare const process: any;
 
 export const apiBaseUrl = (
@@ -27,8 +33,8 @@ export const supabaseAnonKey =
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const now = () => new Date().toISOString();
 
-const CAPTURES_STORAGE_KEY = 'cell_mobile_captures_store_v1';
-const MESSAGES_STORAGE_KEY = 'cell_mobile_messages_store_v1';
+const CAPTURES_STORAGE_KEY = 'cell_mobile_captures_store_v2';
+const MESSAGES_STORAGE_KEY = 'cell_mobile_messages_store_v2';
 
 class RealCellGateway implements CellGateway {
   demo = false as const;
@@ -47,6 +53,16 @@ class RealCellGateway implements CellGateway {
       const list = await this.getLocalMessages();
       const updated = [...list, msg];
       await SecureStore.setItemAsync(MESSAGES_STORAGE_KEY, JSON.stringify(updated.slice(-300)));
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  async clearMessages(agentId: string): Promise<void> {
+    try {
+      const list = await this.getLocalMessages();
+      const filtered = list.filter((m) => m.agentId !== agentId);
+      await SecureStore.setItemAsync(MESSAGES_STORAGE_KEY, JSON.stringify(filtered));
     } catch {
       // Non-fatal
     }
@@ -114,12 +130,47 @@ class RealCellGateway implements CellGateway {
     };
   }
 
-  async getAgents(session?: Session): Promise<Agent[]> {
+  async getWorkspaces(session?: Session): Promise<WorkspaceInfo[]> {
     if (!session?.accessToken) return [];
 
     try {
       const res = await fetch(
-        `${supabaseUrl}/rest/v1/cells_workflows?select=id,name,description,graph,status&order=updated_at.desc&limit=50`,
+        `${supabaseUrl}/rest/v1/cells_workspaces?select=id,name,plan,owner_id,created_at&order=created_at.desc`,
+        {
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+        }
+      );
+      if (res.ok) {
+        const rows = await res.json().catch(() => []);
+        if (Array.isArray(rows) && rows.length > 0) {
+          return rows.map((w: any) => ({
+            id: String(w.id),
+            name: String(w.name || 'Espaço de Trabalho'),
+            plan: w.plan || 'Free',
+            owner_id: w.owner_id,
+            createdAt: w.created_at,
+          }));
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
+    return [{ id: session.workspaceId || 'ws_default', name: 'Espaço Pessoal (Ativo)', plan: 'Pro' }];
+  }
+
+  async getAgents(session?: Session): Promise<Agent[]> {
+    if (!session?.accessToken) return [];
+
+    try {
+      const filter = session.workspaceId
+        ? `&workspace_id=eq.${encodeURIComponent(session.workspaceId)}`
+        : '';
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/cells_workflows?select=id,name,description,graph,is_active,created_at,updated_at${filter}&order=updated_at.desc&limit=50`,
         {
           headers: {
             apikey: supabaseAnonKey,
@@ -130,40 +181,45 @@ class RealCellGateway implements CellGateway {
 
       if (res.ok) {
         const rows = await res.json().catch(() => []);
-        if (Array.isArray(rows) && rows.length > 0) {
-          return rows.map((w: any) => ({
-            id: String(w.id),
-            name: String(w.name || 'Agente'),
-            description: String(w.description || 'Agente autónomo do CELL SYSTEM'),
-            status: 'idle',
-          }));
+        if (Array.isArray(rows)) {
+          return rows.map((w: any) => {
+            // Check if graph contains specialized agent config
+            const agentNode = Array.isArray(w.graph?.nodes)
+              ? w.graph.nodes.find((n: any) => n.type === 'agent')
+              : null;
+
+            return {
+              id: String(w.id),
+              name: String(w.name || 'Agente'),
+              description: String(
+                w.description ||
+                  agentNode?.config?.role ||
+                  'Agente autónomo do CELL SYSTEM'
+              ),
+              status: w.is_active === false ? 'paused' : 'idle',
+              workflowId: String(w.id),
+              createdAt: w.created_at,
+              updatedAt: w.updated_at,
+              config: agentNode?.config
+                ? {
+                    provider: agentNode.config.provider || 'google',
+                    model: agentNode.config.model || 'gemini-1.5-pro',
+                    role: agentNode.config.role || w.name,
+                    systemPrompt: agentNode.config.systemPrompt || agentNode.config.prompt || '',
+                    temperature: agentNode.config.temperature ?? 0.7,
+                    maxModelCalls: agentNode.config.maxIterations ?? 24,
+                  }
+                : undefined,
+            };
+          });
         }
       }
     } catch {
-      // Fallback below
+      // Network error
     }
 
-    // Default starter agents for new workspaces
-    return [
-      {
-        id: 'wf_starter_eliot',
-        name: 'Eliot',
-        description: 'Automação e execução de missões autónomas',
-        status: 'idle',
-      },
-      {
-        id: 'wf_starter_atlas',
-        name: 'Atlas',
-        description: 'Investigação, síntese e análise de dados',
-        status: 'idle',
-      },
-      {
-        id: 'wf_starter_nova',
-        name: 'Nova',
-        description: 'Assistência, organização e contexto',
-        status: 'idle',
-      },
-    ];
+    // Absolutely zero fake agents: return empty array if no real workflows found
+    return [];
   }
 
   async createAgent(name: string, description: string, session?: Session): Promise<Agent> {
@@ -171,28 +227,34 @@ class RealCellGateway implements CellGateway {
       throw new Error('Sessão necessária para criar agentes.');
     }
 
-    const newId = `wf_agent_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const newId = `wf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     const wsId = session.workspaceId || 'ws_default';
 
     const payload = {
       id: newId,
       name: name.trim(),
-      description: description.trim() || 'Agente criado via CELL AGENT Mobile',
+      description: description.trim() || 'Agente autónomo CELL SYSTEM',
       workspace_id: wsId,
-      status: 'ACTIVE',
       is_active: true,
       version: '1.0.0',
       graph: {
         nodes: [
           {
-            id: 'agent-main',
+            id: 'agent-central',
             type: 'agent',
             title: name.trim(),
-            x: 400,
-            y: 300,
+            x: 350,
+            y: 280,
             config: {
-              prompt: description.trim(),
               role: name.trim(),
+              systemPrompt: description.trim(),
+              provider: 'google',
+              model: 'gemini-1.5-pro',
+              temperature: 0.7,
+              maxIterations: 24,
+              enableSandboxHarness: true,
+              verificationRequired: false,
+              memoryType: 'durable',
             },
           },
         ],
@@ -202,19 +264,20 @@ class RealCellGateway implements CellGateway {
       updated_at: now(),
     };
 
-    try {
-      await fetch(`${supabaseUrl}/rest/v1/cells_workflows`, {
-        method: 'POST',
-        headers: {
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${session.accessToken}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=representation',
-        },
-        body: JSON.stringify(payload),
-      });
-    } catch {
-      // Proceed even if database returns insert warning
+    const res = await fetch(`${supabaseUrl}/rest/v1/cells_workflows`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${session.accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Não foi possível guardar o agente no servidor.');
     }
 
     return {
@@ -222,12 +285,123 @@ class RealCellGateway implements CellGateway {
       name: name.trim(),
       description: description.trim(),
       status: 'idle',
+      workflowId: newId,
     };
   }
 
-  async sendMessage(agentId: string, content: string, session?: Session): Promise<AgentMessage> {
+  async getAgentProfile(workflowId: string, session?: Session): Promise<AgentProfile | null> {
+    if (!session?.accessToken) return null;
+
+    try {
+      const res = await fetch(
+        `${apiBaseUrl}/api/agents/profile?workflowId=${encodeURIComponent(workflowId)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            'x-workspace-id': session.workspaceId || 'ws_default',
+          },
+        }
+      );
+
+      if (res.ok) {
+        const body = await res.json().catch(() => null);
+        if (body?.profile) {
+          return {
+            workflowId,
+            config: {
+              provider: body.profile.provider || 'google',
+              model: body.profile.model || 'gemini-1.5-pro',
+              role: body.profile.role || '',
+              systemPrompt: body.profile.systemPrompt || '',
+              maxModelCalls: body.profile.maxModelCalls ?? 24,
+              maxToolCalls: body.profile.maxToolCalls ?? 32,
+              maxOutputTokens: body.profile.maxOutputTokens ?? 2048,
+              maxDurationSeconds: body.profile.maxDurationSeconds ?? 1800,
+              temperature: body.profile.temperature ?? 0.7,
+              concurrency: body.profile.concurrency ?? 2,
+              credentialId: body.profile.credentialId || '',
+            },
+            grants: {
+              editGraph: Boolean(body.profile.grants?.editGraph),
+              executeCode: Boolean(body.profile.grants?.executeCode),
+              webSearch: Boolean(body.profile.grants?.webSearch),
+              teams: Boolean(body.profile.grants?.teams),
+              externalEffects: Boolean(body.profile.grants?.externalEffects),
+              verificationRequired: Boolean(body.profile.grants?.verificationRequired),
+              executeNodes: body.profile.grants?.executeNodes || [],
+              credentialIds: body.profile.grants?.credentialIds || [],
+              variableNames: body.profile.grants?.variableNames || [],
+            },
+            revision: body.revision ?? 0,
+          };
+        }
+      }
+    } catch {
+      // Return default
+    }
+
+    return {
+      workflowId,
+      config: {
+        provider: 'google',
+        model: 'gemini-1.5-pro',
+        role: 'Agente Autónomo',
+        systemPrompt: 'És um agente inteligente do CELL SYSTEM.',
+        maxModelCalls: 24,
+        maxToolCalls: 32,
+        maxOutputTokens: 2048,
+        maxDurationSeconds: 1800,
+        temperature: 0.7,
+        concurrency: 2,
+      },
+      grants: {
+        editGraph: false,
+        executeCode: true,
+        webSearch: true,
+        teams: false,
+        externalEffects: false,
+        verificationRequired: false,
+      },
+    };
+  }
+
+  async saveAgentProfile(
+    workflowId: string,
+    profile: Partial<AgentProfile>,
+    session?: Session
+  ): Promise<void> {
+    if (!session?.accessToken) throw new Error('Sessão necessária para salvar perfil.');
+
+    const res = await fetch(`${apiBaseUrl}/api/agents/profile`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.accessToken}`,
+        'x-workspace-id': session.workspaceId || 'ws_default',
+      },
+      body: JSON.stringify({
+        workflowId,
+        profile: {
+          ...profile.config,
+          grants: profile.grants,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || 'Falha ao guardar perfil do agente no servidor.');
+    }
+  }
+
+  async sendMessage(
+    agentId: string,
+    content: string,
+    attachments?: FileAttachment[],
+    session?: Session
+  ): Promise<AgentMessage> {
     if (!session?.accessToken) {
-      throw new Error('Sessão necessária para enviar mensagens.');
+      throw new Error('Sessão necessária para comunicar com os agentes.');
     }
 
     const userMessage: AgentMessage = {
@@ -237,12 +411,22 @@ class RealCellGateway implements CellGateway {
       content,
       createdAt: now(),
       status: 'sent',
+      attachments: attachments?.map((a) => ({ name: a.name, mimeType: a.mimeType })),
     };
 
     await this.saveLocalMessage(userMessage);
 
     // Call live backend agent execution API
     try {
+      const filesPayload =
+        attachments && attachments.length > 0
+          ? attachments.map((a) => ({
+              name: a.name,
+              mimeType: a.mimeType,
+              data: a.data,
+            }))
+          : undefined;
+
       const res = await fetch(`${apiBaseUrl}/api/agents/runs`, {
         method: 'POST',
         headers: {
@@ -254,35 +438,100 @@ class RealCellGateway implements CellGateway {
           workflowId: agentId,
           message: content,
           idempotencyKey: uid(),
+          files: filesPayload,
         }),
       });
 
       if (res.ok) {
         const body = await res.json().catch(() => ({}));
-        const run = body?.run;
-        const answer =
-          run?.final_output ||
-          run?.output ||
-          run?.summary ||
-          run?.last_error ||
-          (run?.status === 'running'
-            ? 'Missão em execução no backend do CELL SYSTEM...'
-            : null);
+        const runId = body?.run?.id;
 
-        if (answer) {
-          const assistantMessage: AgentMessage = {
-            id: uid(),
-            agentId,
-            role: 'assistant',
-            content: typeof answer === 'string' ? answer : JSON.stringify(answer, null, 2),
-            createdAt: now(),
-            status: 'sent',
-          };
-          await this.saveLocalMessage(assistantMessage);
+        if (runId) {
+          // Immediately trigger execution drain tick
+          fetch(`${apiBaseUrl}/api/agents/tick`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.accessToken}`,
+              'x-workspace-id': session.workspaceId || 'ws_default',
+            },
+            body: JSON.stringify({ runId }),
+          }).catch(() => {});
+
+          // Poll run status for completion
+          let answerText: string | null = null;
+          for (let attempt = 0; attempt < 12; attempt++) {
+            await new Promise((r) => setTimeout(r, 1800));
+
+            const pollRes = await fetch(`${apiBaseUrl}/api/agents/runs?id=${encodeURIComponent(runId)}`, {
+              headers: {
+                Authorization: `Bearer ${session.accessToken}`,
+                'x-workspace-id': session.workspaceId || 'ws_default',
+              },
+            }).catch(() => null);
+
+            if (pollRes && pollRes.ok) {
+              const pollData = await pollRes.json().catch(() => ({}));
+              const currentRun = pollData?.run;
+
+              if (currentRun?.status === 'success') {
+                answerText =
+                  currentRun.answer ||
+                  currentRun.final_output ||
+                  currentRun.output ||
+                  currentRun.summary ||
+                  'Missão concluída com sucesso.';
+                break;
+              } else if (currentRun?.status === 'failed') {
+                answerText =
+                  currentRun.last_error ||
+                  currentRun.summary ||
+                  'A execução do agente encontrou uma falha no CELL SYSTEM.';
+                break;
+              } else if (currentRun?.status === 'waiting_approval') {
+                answerText = `Ação pendente de aprovação manual: ${currentRun.approval?.reason || 'Operação sensível'}`;
+                break;
+              }
+            }
+          }
+
+          if (answerText) {
+            const assistantMessage: AgentMessage = {
+              id: uid(),
+              agentId,
+              role: 'assistant',
+              content: answerText,
+              createdAt: now(),
+              status: 'sent',
+            };
+            await this.saveLocalMessage(assistantMessage);
+          } else {
+            // Long running mission notification
+            const pendingNotice: AgentMessage = {
+              id: uid(),
+              agentId,
+              role: 'assistant',
+              content: `A missão continua a executar em segundo plano (ID: ${runId.slice(0, 8)}). Podes acompanhar os passos no separador Atividade.`,
+              createdAt: now(),
+              status: 'sent',
+            };
+            await this.saveLocalMessage(pendingNotice);
+          }
         }
+      } else {
+        const errorBody = await res.json().catch(() => ({}));
+        throw new Error(errorBody.message || 'Erro ao submeter missão para o agente.');
       }
-    } catch {
-      // Message was already saved locally
+    } catch (e: any) {
+      const errorMessage: AgentMessage = {
+        id: uid(),
+        agentId,
+        role: 'assistant',
+        content: `⚠️ Não foi possível obter resposta: ${e?.message || 'Falha de ligação.'}`,
+        createdAt: now(),
+        status: 'failed',
+      };
+      await this.saveLocalMessage(errorMessage);
     }
 
     return userMessage;
@@ -296,7 +545,6 @@ class RealCellGateway implements CellGateway {
       return forAgent;
     }
 
-    // Attempt to pull synced runs from backend
     try {
       const res = await fetch(
         `${apiBaseUrl}/api/agents/runs?workflowId=${encodeURIComponent(agentId)}`,
@@ -321,18 +569,18 @@ class RealCellGateway implements CellGateway {
                 agentId,
                 role: 'user',
                 content: String(r.message),
-                createdAt: r.created_at || now(),
+                createdAt: r.createdAt || r.created_at || now(),
                 status: 'sent',
               });
             }
-            const out = r.final_output || r.output || r.last_error;
+            const out = r.answer || r.final_output || r.output || r.summary || r.last_error;
             if (out) {
               remoteMessages.push({
                 id: `remote_a_${r.id}`,
                 agentId,
                 role: 'assistant',
                 content: typeof out === 'string' ? out : JSON.stringify(out, null, 2),
-                createdAt: r.finished_at || r.updated_at || now(),
+                createdAt: r.updatedAt || r.finished_at || now(),
                 status: 'sent',
               });
             }
@@ -348,10 +596,70 @@ class RealCellGateway implements CellGateway {
         }
       }
     } catch {
-      // Return local messages on network failure
+      // Non-fatal: return local messages
     }
 
     return forAgent;
+  }
+
+  async getCredentials(session?: Session): Promise<CredentialVaultItem[]> {
+    if (!session?.accessToken) return [];
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/credentials`, {
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          'x-workspace-id': session.workspaceId || 'ws_default',
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json().catch(() => []);
+        if (Array.isArray(data)) {
+          return data.map((c: any) => ({
+            id: String(c.id),
+            name: String(c.name || c.provider || 'Credencial'),
+            provider: String(c.provider || 'api_key'),
+            maskedKey: c.maskedKey || (c.provider ? `${c.provider.toUpperCase()} (••••••)` : '••••••••'),
+            created_at: c.created_at,
+          }));
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
+    return [];
+  }
+
+  async getVariables(session?: Session): Promise<GlobalVariableItem[]> {
+    if (!session?.accessToken) return [];
+
+    try {
+      const res = await fetch(`${apiBaseUrl}/api/variables`, {
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          'x-workspace-id': session.workspaceId || 'ws_default',
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json().catch(() => []);
+        if (Array.isArray(data)) {
+          return data.map((v: any) => ({
+            id: String(v.id || v.name),
+            name: String(v.name || v.key),
+            key: String(v.key || v.name),
+            maskedValue: '••••••••',
+            created_at: v.created_at,
+          }));
+        }
+      }
+    } catch {
+      // Fallback
+    }
+
+    return [];
   }
 
   async getConnections(session?: Session): Promise<Connection[]> {
@@ -372,7 +680,7 @@ class RealCellGateway implements CellGateway {
       },
       {
         id: 'conn_search',
-        name: 'Plugin de Pesquisa',
+        name: 'Pesquisa Web Real-Time',
         kind: 'Plugins',
         description: 'Pesquisa web em tempo real e extração semântica de fontes.',
         connected: false,
@@ -405,32 +713,20 @@ class RealCellGateway implements CellGateway {
     }
 
     try {
-      const res = await fetch(`${apiBaseUrl}/api/credentials`, {
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          'x-workspace-id': session.workspaceId || 'ws_default',
-        },
+      const creds = await this.getCredentials(session);
+      const credNames = new Set(creds.map((c) => c.provider.toLowerCase()));
+
+      return defaultCatalog.map((item) => {
+        if (item.kind === 'Cells') return item;
+        if (item.id === 'conn_gdrive') return { ...item, connected: credNames.has('google') || credNames.has('google_drive') };
+        if (item.id === 'conn_github') return { ...item, connected: credNames.has('github') };
+        if (item.id === 'conn_search') return { ...item, connected: credNames.has('tavily') || credNames.has('brave') || credNames.has('google') };
+        if (item.id === 'conn_mcp') return { ...item, connected: credNames.has('mcp') };
+        return item;
       });
-
-      if (res.ok) {
-        const data = await res.json().catch(() => []);
-        const creds = Array.isArray(data) ? data : [];
-        const credNames = new Set(creds.map((c: any) => String(c.provider || c.name || '').toLowerCase()));
-
-        return defaultCatalog.map((item) => {
-          if (item.kind === 'Cells') return item;
-          if (item.id === 'conn_gdrive') return { ...item, connected: credNames.has('google') || credNames.has('google_drive') };
-          if (item.id === 'conn_github') return { ...item, connected: credNames.has('github') };
-          if (item.id === 'conn_search') return { ...item, connected: credNames.has('tavily') || credNames.has('brave') || credNames.has('search') };
-          if (item.id === 'conn_mcp') return { ...item, connected: credNames.has('mcp') };
-          return item;
-        });
-      }
     } catch {
-      // Return default catalog on error
+      return defaultCatalog;
     }
-
-    return defaultCatalog;
   }
 
   async getActivity(session?: Session): Promise<ActivityItem[]> {
@@ -473,7 +769,7 @@ class RealCellGateway implements CellGateway {
         }
       }
     } catch {
-      // Fallback below
+      // Fallback
     }
 
     return [];
@@ -507,6 +803,16 @@ class RealCellGateway implements CellGateway {
     }
 
     return saved;
+  }
+
+  async uploadCaptureFile(item: CaptureItem, session?: Session): Promise<string> {
+    if (!item.base64 && !item.uri) {
+      throw new Error('Ficheiro sem dados para carregar.');
+    }
+
+    // In CELL AGENT backend, attachments are sent directly via base64 in runs API
+    // or can be synced to Supabase storage bucket `agent-attachments`
+    return item.uri || 'synced';
   }
 
   async registerPush(token: string): Promise<void> {

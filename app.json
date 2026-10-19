@@ -3,7 +3,7 @@
     "name": "CELL AGENT",
     "slug": "cell-agent-mobile",
     "scheme": "cellagent",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFFFFF",

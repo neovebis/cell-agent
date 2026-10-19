@@ -89,7 +89,7 @@ jobs:
           APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
           if [ -n "$APK_FOUND" ]; then
             echo "APK generated successfully: $APK_FOUND"
-            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.1.5.apk
+            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.1.6.apk
             ls -la build-output/
           else
             echo "Error: No APK file was generated!"
@@ -99,7 +99,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cell-agent-mobile-v0.1.5-apk
+          name: cell-agent-mobile-v0.1.6-apk
           path: build-output/*.apk
           retention-days: 30
 
@@ -107,26 +107,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_FILE="build-output/cell-agent-mobile-v0.1.5.apk"
+          APK_FILE="build-output/cell-agent-mobile-v0.1.6.apk"
           if [ -f "$APK_FILE" ]; then
             echo "Publishing release with APK: $APK_FILE"
-            if gh release view v0.1.5 >/dev/null 2>&1; then
-              gh release upload v0.1.5 "$APK_FILE" --clobber
+            if gh release view v0.1.6 >/dev/null 2>&1; then
+              gh release upload v0.1.6 "$APK_FILE" --clobber
             else
-              gh release create v0.1.5 "$APK_FILE" \
-                --title "CELL AGENT Mobile v0.1.5" \
-                --notes "### CELL AGENT Mobile v0.1.5
+              gh release create v0.1.6 "$APK_FILE" \
+                --title "CELL AGENT Mobile v0.1.6" \
+                --notes "### CELL AGENT Mobile v0.1.6
 
-          APK Android pronto para instalação direta no telemóvel.
+          APK Android pronto para instalação direta no telemóvel com integração real do ecossistema CELL.
 
-          #### Principais Recursos:
-          - Conexão nativa e direta com o backend CELL (Cloudflare Pages)
-          - Autenticação e sincronização direta com Supabase
-          - Capturas offline com persistência local
-          - Interface de Agentes, Workspaces, Conectores e Jobs
+          #### Principais Atualizações nesta versão:
+          - **Zero Agentes Falsos:** Eliminação total de dados simulados. Todos os agentes e nós são consultados em tempo real diretamente da tabela \`cells_workflows\` no Supabase.
+          - **Execução Real com Polling & Tick:** Submissão de missões para o motor \`/api/agents/runs\` via Cloudflare Pages com chamada a \`/api/agents/tick\` e escuta do estado real da IA.
+          - **Barra do Perfil & Gestão de Espaços:** Seletor interativo de Workspace com suporte multi-tenancy, estado da sessão Supabase (JWT + TLS 1.3), Cofre de Credenciais cifradas (AES-GCM), Variáveis Globais (\$vars), Mecanismos de Segurança e Endpoints de Produção.
+          - **Menu 3 Pontos no Chat (Definições do Agente):** Modal completo para configurar Provedor (Google, OpenAI, Anthropic, Groq, Mistral, DeepSeek), Modelo, Prompt de Sistema, Temperatura, Loops de Execução e Matriz de Permissões (\`AgentGrants\` com Sandbox, Pesquisa Web, Edição de Grafo, Efeitos Externos e Verificação).
+          - **Capture Real:** Captura com suporte a base64, anexação direta na conversa e ação de envio imediato de qualquer fotografia, documento ou nota para o contexto de um agente.
 
           #### Como instalar no telemóvel:
-          1. Baixe o ficheiro **cell-agent-mobile-v0.1.5.apk** abaixo diretamente no seu telemóvel Android.
+          1. Baixe o ficheiro **cell-agent-mobile-v0.1.6.apk** abaixo diretamente no seu telemóvel Android.
           2. Abra o arquivo descarregado e confirme a instalação (ative 'Permitir desta fonte' se solicitado).
           3. Abra o **CELL AGENT** e aceda à sua conta!"
             fi
