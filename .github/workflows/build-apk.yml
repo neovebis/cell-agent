@@ -1,0 +1,126 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Prebuild Android project
+        run: npx expo prebuild --platform android --clean --no-install
+        env:
+          EXPO_PUBLIC_CELL_API_URL: https://cell-griot.pages.dev
+          EXPO_PUBLIC_SUPABASE_URL: https://oxulnwbwpfxwjbvxlrga.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aEBNlthmZizezIeYKodSnw_0ndTYG42
+
+      - name: Setup Keystore & Signing Config
+        run: |
+          mkdir -p android/app
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Using custom keystore from repository secrets"
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+            export KEY_ALIAS="${{ secrets.KEYSTORE_ALIAS }}"
+            export STORE_PASS="${{ secrets.KEYSTORE_PASSWORD }}"
+            export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
+          else
+            echo "Generating self-signed release keystore for standalone APK"
+            keytool -genkeypair -v -storetype PKCS12 -keystore android/app/release.keystore \
+              -alias cellagent -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=CELL AGENT, OU=Mobile, O=CellSystem, L=Luanda, S=Luanda, C=AO" \
+              -storepass cellagent123 -keypass cellagent123
+            export KEY_ALIAS="cellagent"
+            export STORE_PASS="cellagent123"
+            export KEY_PASS="cellagent123"
+          fi
+          node scripts/configure-signing.js
+
+      - name: Build Android Release APK
+        env:
+          EXPO_PUBLIC_CELL_API_URL: https://cell-griot.pages.dev
+          EXPO_PUBLIC_SUPABASE_URL: https://oxulnwbwpfxwjbvxlrga.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aEBNlthmZizezIeYKodSnw_0ndTYG42
+          GRADLE_OPTS: "-Xmx3072m -XX:MaxMetaspaceSize=512m -Dorg.gradle.jvmargs=-Xmx3072m"
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon || ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare APK Output
+        run: |
+          mkdir -p build-output
+          APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -n "$APK_FOUND" ]; then
+            echo "APK generated successfully: $APK_FOUND"
+            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.1.5.apk
+            ls -la build-output/
+          else
+            echo "Error: No APK file was generated!"
+            exit 1
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-agent-mobile-v0.1.5-apk
+          path: build-output/*.apk
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK_FILE="build-output/cell-agent-mobile-v0.1.5.apk"
+          if [ -f "$APK_FILE" ]; then
+            echo "Publishing release with APK: $APK_FILE"
+            gh release create v0.1.5 "$APK_FILE" \
+              --title "CELL AGENT Mobile v0.1.5" \
+              --notes "### CELL AGENT Mobile v0.1.5
+
+          APK Android pronto para instalação direta no telemóvel.
+
+          #### Principais Recursos:
+          - Conexão nativa e direta com o backend CELL (Cloudflare Pages)
+          - Autenticação e sincronização direta com Supabase
+          - Capturas offline com persistência local
+          - Interface de Agentes, Workspaces, Conectores e Jobs
+
+          #### Como instalar no telemóvel:
+          1. Baixe o ficheiro **cell-agent-mobile-v0.1.5.apk** abaixo diretamente no seu telemóvel Android.
+          2. Abra o arquivo descarregado e confirme a instalação (ative 'Permitir desta fonte' se solicitado).
+          3. Abra o **CELL AGENT** e aceda à sua conta!" \
+              --clobber || echo "Release already exists or updated."
+          fi

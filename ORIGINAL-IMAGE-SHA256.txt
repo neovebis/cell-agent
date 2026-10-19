@@ -1,0 +1,4 @@
+Original upload: 1000125869.png (JPEG bytes)
+Mobile asset: src/assets/cell-agent-logo-original.jpg
+SHA256: b794946eeba8393467335fe1813186ca186b3d6ba5a249d5e2fce937f840b61c
+Bytes preserved exactly.

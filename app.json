@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "CELL AGENT",
+    "slug": "cell-agent-mobile",
+    "scheme": "cellagent",
+    "version": "0.1.5",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FFFFFF",
+    "splash": {
+      "backgroundColor": "#FFFFFF"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cellsystem.agent.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Permitir capturar imagens para a biblioteca do CELL AGENT.",
+        "NSMicrophoneUsageDescription": "Permitir gravar conteúdos de áudio quando esta função estiver disponível.",
+        "NSPhotoLibraryUsageDescription": "Permitir escolher imagens e vídeos para a biblioteca."
+      }
+    },
+    "android": {
+      "package": "com.cellsystem.agent.mobile",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./adaptive-foreground.png"
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Selecionar fotos e vídeos para a tua biblioteca.",
+          "cameraPermission": "Capturar conteúdos para a tua biblioteca.",
+          "microphonePermission": "Gravar vídeos com áudio."
+        }
+      ],
+      "expo-notifications",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    },
+    "icon": "./icon.png"
+  }
+}
