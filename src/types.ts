@@ -50,6 +50,7 @@ export interface Agent {
   config?: AgentConfig;
   grants?: AgentGrants;
   workflowId?: string;
+  workspaceId?: string;
   createdAt?: string;
   updatedAt?: string;
 }

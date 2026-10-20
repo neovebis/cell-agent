@@ -131,7 +131,13 @@ function Root() {
       gateway.getVariables(auth),
     ]);
 
-    if (results[0].status === 'fulfilled') setAgents(results[0].value);
+    if (results[0].status === 'fulfilled') {
+      setAgents(results[0].value);
+      if (auth?.workspaceId && currentSession && auth.workspaceId !== currentSession.workspaceId) {
+        currentSession.workspaceId = auth.workspaceId;
+        saveSession(currentSession).catch(() => {});
+      }
+    }
     if (results[1].status === 'fulfilled') setCaptures(results[1].value);
     if (results[2].status === 'fulfilled') setConnections(results[2].value);
     if (results[3].status === 'fulfilled') setActivity(results[3].value);
@@ -240,9 +246,16 @@ function Root() {
     try {
       const agent = await gateway.createAgent(name, description, session ?? undefined);
       setAgents((prev) => [agent, ...prev]);
+      if (session && agent.workspaceId && session.workspaceId !== agent.workspaceId) {
+        const updated = { ...session, workspaceId: agent.workspaceId };
+        await saveSession(updated).catch(() => {});
+        setSession(updated);
+      }
       openAgent(agent);
     } catch (e) {
-      notify(e instanceof Error ? e.message : 'Erro ao criar agente.');
+      const msg = e instanceof Error ? e.message : 'Erro ao criar agente.';
+      notify(msg);
+      throw e;
     }
   };
 

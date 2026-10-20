@@ -89,7 +89,7 @@ jobs:
           APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
           if [ -n "$APK_FOUND" ]; then
             echo "APK generated successfully: $APK_FOUND"
-            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.1.6.apk
+            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.1.7.apk
             ls -la build-output/
           else
             echo "Error: No APK file was generated!"
@@ -99,7 +99,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cell-agent-mobile-v0.1.6-apk
+          name: cell-agent-mobile-v0.1.7-apk
           path: build-output/*.apk
           retention-days: 30
 
@@ -107,28 +107,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_FILE="build-output/cell-agent-mobile-v0.1.6.apk"
+          APK_FILE="build-output/cell-agent-mobile-v0.1.7.apk"
           if [ -f "$APK_FILE" ]; then
             echo "Publishing release with APK: $APK_FILE"
-            if gh release view v0.1.6 >/dev/null 2>&1; then
-              gh release upload v0.1.6 "$APK_FILE" --clobber
+            if gh release view v0.1.7 >/dev/null 2>&1; then
+              gh release upload v0.1.7 "$APK_FILE" --clobber
             else
-              gh release create v0.1.6 "$APK_FILE" \
-                --title "CELL AGENT Mobile v0.1.6" \
-                --notes "### CELL AGENT Mobile v0.1.6
+              gh release create v0.1.7 "$APK_FILE" \
+                --title "CELL AGENT Mobile v0.1.7" \
+                --notes "### CELL AGENT Mobile v0.1.7
 
-          APK Android pronto para instalação direta no telemóvel com integração real do ecossistema CELL.
+          APK Android pronto para instalação direta no telemóvel com sincronização total de agentes existentes e criação de novos agentes.
 
-          #### Principais Atualizações nesta versão:
-          - **Zero Agentes Falsos:** Eliminação total de dados simulados. Todos os agentes e nós são consultados em tempo real diretamente da tabela \`cells_workflows\` no Supabase.
-          - **Execução Real com Polling & Tick:** Submissão de missões para o motor \`/api/agents/runs\` via Cloudflare Pages com chamada a \`/api/agents/tick\` e escuta do estado real da IA.
-          - **Barra do Perfil & Gestão de Espaços:** Seletor interativo de Workspace com suporte multi-tenancy, estado da sessão Supabase (JWT + TLS 1.3), Cofre de Credenciais cifradas (AES-GCM), Variáveis Globais (\$vars), Mecanismos de Segurança e Endpoints de Produção.
-          - **Menu 3 Pontos no Chat (Definições do Agente):** Modal completo para configurar Provedor (Google, OpenAI, Anthropic, Groq, Mistral, DeepSeek), Modelo, Prompt de Sistema, Temperatura, Loops de Execução e Matriz de Permissões (\`AgentGrants\` com Sandbox, Pesquisa Web, Edição de Grafo, Efeitos Externos e Verificação).
-          - **Capture Real:** Captura com suporte a base64, anexação direta na conversa e ação de envio imediato de qualquer fotografia, documento ou nota para o contexto de um agente.
+          #### Principais Correções e Melhorias nesta versão:
+          - **Sincronização Total com o Site:** Os agentes e fluxos criados previamente no website agora aparecem de imediato após o login. A consulta foi otimizada para respeitar as políticas de RLS do Supabase sem bloqueios indevidos por workspace_id padrão.
+          - **Criação de Agentes Funcional no Servidor:** Resolvido o erro de gravação na tabela \`cells_workflows\`. O payload agora injeta obrigatoriamente \`user_id\`, \`workspace_id\` dinâmico, \`viewport\` e nós válidos, garantindo integridade e conformidade estrita com o Postgres RLS.
+          - **Resolução Inteligente de Workspaces:** Descoberta e associação automática ao workspace ativo do utilizador (\`cells_workspaces\`, \`cells_workspace_members\` ou criação automática via \`bootstrap_cell_workspace\`).
+          - **Expansão de Nós de Agente:** Se um fluxo contiver múltiplos agentes criados no Agent Studio, cada um deles é listado individualmente com o seu respetivo papel, instruções e configurações de inteligência.
+          - **Histórico Real Conectado:** O histórico de conversa está diretamente ligado ao motor do website (\`/api/agents/runs\`), permitindo ver no telemóvel o que foi falado no site e vice-versa.
 
           #### Como instalar no telemóvel:
-          1. Baixe o ficheiro **cell-agent-mobile-v0.1.6.apk** abaixo diretamente no seu telemóvel Android.
+          1. Descarregue o ficheiro **cell-agent-mobile-v0.1.7.apk** abaixo diretamente no seu smartphone Android.
           2. Abra o arquivo descarregado e confirme a instalação (ative 'Permitir desta fonte' se solicitado).
-          3. Abra o **CELL AGENT** e aceda à sua conta!"
+          3. Abra o **CELL AGENT** e inicie sessão com a sua conta!"
             fi
           fi

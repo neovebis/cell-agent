@@ -52,6 +52,7 @@ const MAX_LOOPS = [16, 24, 32, 48];
 
 export function ChatScreen(props: Props) {
   const [creationOpen, setCreationOpen] = useState(false);
+  const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentName, setAgentName] = useState('');
   const [agentDescription, setAgentDescription] = useState('');
   const [draft, setDraft] = useState('');
@@ -290,18 +291,30 @@ export function ChatScreen(props: Props) {
               placeholderTextColor={C.faint}
             />
             <Pressable
-              onPress={() => {
+              disabled={creatingAgent}
+              onPress={async () => {
                 if (!agentName.trim()) return props.onError('Indica o nome do agente.');
-                props.onNew(agentName.trim(), agentDescription.trim());
-                setCreationOpen(false);
-                setAgentName('');
-                setAgentDescription('');
+                setCreatingAgent(true);
+                try {
+                  await props.onNew(agentName.trim(), agentDescription.trim());
+                  setCreationOpen(false);
+                  setAgentName('');
+                  setAgentDescription('');
+                } catch {
+                  // Error handled in parent
+                } finally {
+                  setCreatingAgent(false);
+                }
               }}
-              style={styles.blackButton}
+              style={[styles.blackButton, creatingAgent && { opacity: 0.7 }]}
             >
-              <Txt color={C.white} weight="700">
-                Criar no servidor
-              </Txt>
+              {creatingAgent ? (
+                <ActivityIndicator color={C.white} />
+              ) : (
+                <Txt color={C.white} weight="700">
+                  Criar no servidor
+                </Txt>
+              )}
             </Pressable>
           </View>
         </Modal>
