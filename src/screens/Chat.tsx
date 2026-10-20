@@ -13,7 +13,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
 import { C, R } from '../theme';
@@ -176,6 +178,8 @@ function MessageBubble({
 }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(6)).current;
+  const [showCopyOption, setShowCopyOption] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -206,6 +210,19 @@ function MessageBubble({
     }
   };
 
+  const handleCopyMessage = async () => {
+    try {
+      await Clipboard.setStringAsync(item.content);
+      setCopied(true);
+      setTimeout(() => {
+        setCopied(false);
+        setShowCopyOption(false);
+      }, 1400);
+    } catch {
+      // ignore
+    }
+  };
+
   return (
     <Animated.View
       style={{
@@ -224,7 +241,28 @@ function MessageBubble({
         </View>
       )}
 
-      <View
+      {/* Floating Copy Option Pill when user message is clicked */}
+      {isUser && showCopyOption && (
+        <View style={styles.copyPillContainer}>
+          <Pressable onPress={handleCopyMessage} style={styles.copyPill}>
+            <Icon
+              name={copied ? 'checkmark-circle' : 'copy-outline'}
+              size={14}
+              color={C.white}
+            />
+            <Txt size={12} weight="600" color={C.white}>
+              {copied ? 'Copiado!' : 'Copiar'}
+            </Txt>
+          </Pressable>
+        </View>
+      )}
+
+      <Pressable
+        onPress={() => {
+          if (isUser) {
+            setShowCopyOption((prev) => !prev);
+          }
+        }}
         style={[
           styles.bubble,
           isUser ? styles.userBubble : styles.assistantBubble,
@@ -293,7 +331,7 @@ function MessageBubble({
             </Txt>
           )}
         </View>
-      </View>
+      </Pressable>
     </Animated.View>
   );
 }
@@ -307,6 +345,10 @@ export function ChatScreen(props: Props) {
   const [showTools, setShowTools] = useState(false);
   const [attachment, setAttachment] = useState<FileAttachment | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+
+  // Animated rotation for '+' to 'x' button and smooth card entrance
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+  const menuAnim = useRef(new Animated.Value(0)).current;
 
   // Agent Settings & Grants Modal
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -335,6 +377,8 @@ export function ChatScreen(props: Props) {
   useEffect(() => {
     setDraft('');
     setShowTools(false);
+    rotateAnim.setValue(0);
+    menuAnim.setValue(0);
     setAttachment(null);
     if (props.activeAgent) {
       const cfg = props.activeAgent.config;
@@ -365,8 +409,63 @@ export function ChatScreen(props: Props) {
     return () => clearTimeout(timer);
   }, [props.messages.length, props.busy]);
 
+  const toggleTools = () => {
+    if (showTools) {
+      Animated.parallel([
+        Animated.spring(rotateAnim, {
+          toValue: 0,
+          friction: 7,
+          tension: 70,
+          useNativeDriver: true,
+        }),
+        Animated.timing(menuAnim, {
+          toValue: 0,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setShowTools(false);
+      });
+    } else {
+      setShowTools(true);
+      Animated.parallel([
+        Animated.spring(rotateAnim, {
+          toValue: 1,
+          friction: 7,
+          tension: 70,
+          useNativeDriver: true,
+        }),
+        Animated.spring(menuAnim, {
+          toValue: 1,
+          friction: 7,
+          tension: 65,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  };
+
+  const closeTools = () => {
+    if (!showTools) return;
+    Animated.parallel([
+      Animated.spring(rotateAnim, {
+        toValue: 0,
+        friction: 7,
+        tension: 70,
+        useNativeDriver: true,
+      }),
+      Animated.timing(menuAnim, {
+        toValue: 0,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowTools(false);
+    });
+  };
+
   const handlePickDocument = async () => {
-    setShowTools(false);
+    closeTools();
     try {
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
@@ -375,7 +474,6 @@ export function ChatScreen(props: Props) {
       if (result.canceled || !result.assets.length) return;
       const asset = result.assets[0];
 
-      // Convert file to base64 if needed
       let base64 = '';
       try {
         const response = await fetch(asset.uri);
@@ -406,9 +504,60 @@ export function ChatScreen(props: Props) {
     }
   };
 
+  const handleLaunchCamera = async () => {
+    closeTools();
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        props.onError('Permissão de acesso à câmara necessária.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+        base64: true,
+      });
+      if (result.canceled || !result.assets.length) return;
+      const asset = result.assets[0];
+      setAttachment({
+        name: `foto_${Date.now()}.jpg`,
+        mimeType: 'image/jpeg',
+        data: asset.base64 || '',
+        uri: asset.uri,
+      });
+    } catch {
+      props.onError('Não foi possível tirar a fotografia.');
+    }
+  };
+
+  const handleLaunchGallery = async () => {
+    closeTools();
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        props.onError('Permissão de fotos necessária.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images', 'videos'],
+        quality: 0.8,
+        base64: true,
+      });
+      if (result.canceled || !result.assets.length) return;
+      const asset = result.assets[0];
+      setAttachment({
+        name: asset.fileName || `media_${Date.now()}.${asset.type === 'video' ? 'mp4' : 'jpg'}`,
+        mimeType: asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
+        data: asset.base64 || '',
+        uri: asset.uri,
+      });
+    } catch {
+      props.onError('Não foi possível carregar a imagem ou vídeo.');
+    }
+  };
+
   const handleSelectCapture = (item: CaptureItem) => {
     setLibraryOpen(false);
-    setShowTools(false);
+    closeTools();
     setAttachment({
       name: item.title,
       mimeType: item.type === 'image' ? 'image/jpeg' : 'text/plain',
@@ -449,6 +598,11 @@ export function ChatScreen(props: Props) {
       props.onError('Falha ao limpar histórico.');
     }
   };
+
+  const spin = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '45deg'],
+  });
 
   // Agent List View (No Active Agent)
   if (!props.activeAgent) {
@@ -520,12 +674,12 @@ export function ChatScreen(props: Props) {
               }}
             >
               <Txt size={27} weight="700">
-                Criar agente real
+                Criar missão
               </Txt>
               <RoundButton icon="close" label="Fechar" onPress={() => setCreationOpen(false)} />
             </View>
             <Txt size={13} color={C.muted} style={{ marginBottom: 10 }}>
-              NOME DO AGENTE
+              NOME DO AGENTE / MISSÃO
             </Txt>
             <TextInput
               value={agentName}
@@ -567,7 +721,7 @@ export function ChatScreen(props: Props) {
                 <ActivityIndicator color={C.white} />
               ) : (
                 <Txt color={C.white} weight="700">
-                  Criar agente
+                  Criar missão
                 </Txt>
               )}
             </Pressable>
@@ -647,22 +801,163 @@ export function ChatScreen(props: Props) {
         }
       />
 
-      {/* Tools / Attachment selector */}
+      {/* Floating Action Menu Card matching design (Criar missão, Câmara, Imagem ou vídeo, Ficheiros, Capture, Plugins) */}
       {showTools && (
-        <View style={styles.toolsBar}>
-          <Pressable onPress={handlePickDocument} style={styles.toolBtn}>
-            <Icon name="document-outline" size={20} />
-            <Txt size={12} weight="600">
-              Ficheiro
-            </Txt>
+        <Animated.View
+          style={[
+            styles.floatingMenuCard,
+            {
+              opacity: menuAnim,
+              transform: [
+                {
+                  translateY: menuAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [16, 0],
+                  }),
+                },
+                {
+                  scale: menuAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.97, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          {/* 1. Criar missão */}
+          <Pressable
+            style={styles.menuItem}
+            onPress={() => {
+              closeTools();
+              setCreationOpen(true);
+            }}
+          >
+            <View style={styles.menuIconCircle}>
+              <Icon name="sparkles-outline" size={20} color={C.ink} />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <Txt size={15} weight="700">
+                Criar missão
+              </Txt>
+              <Txt size={12} color={C.muted}>
+                Missão autónoma no projeto
+              </Txt>
+            </View>
+            <Icon name="chevron-forward" size={16} color={C.muted} />
           </Pressable>
-          <Pressable onPress={() => setLibraryOpen(true)} style={styles.toolBtn}>
-            <Icon name="images-outline" size={20} />
-            <Txt size={12} weight="600">
-              Biblioteca Capture
-            </Txt>
+
+          <View style={styles.menuDivider} />
+
+          {/* 2. Câmara */}
+          <Pressable
+            style={styles.menuItem}
+            onPress={handleLaunchCamera}
+          >
+            <View style={styles.menuIconCircle}>
+              <Icon name="camera-outline" size={20} color={C.ink} />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <Txt size={15} weight="700">
+                Câmara
+              </Txt>
+              <Txt size={12} color={C.muted}>
+                Tirar foto agora
+              </Txt>
+            </View>
+            <Icon name="chevron-forward" size={16} color={C.muted} />
           </Pressable>
-        </View>
+
+          <View style={styles.menuDivider} />
+
+          {/* 3. Imagem ou vídeo */}
+          <Pressable
+            style={styles.menuItem}
+            onPress={handleLaunchGallery}
+          >
+            <View style={styles.menuIconCircle}>
+              <Icon name="image-outline" size={20} color={C.ink} />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <Txt size={15} weight="700">
+                Imagem ou vídeo
+              </Txt>
+              <Txt size={12} color={C.muted}>
+                Da galeria
+              </Txt>
+            </View>
+            <Icon name="chevron-forward" size={16} color={C.muted} />
+          </Pressable>
+
+          <View style={styles.menuDivider} />
+
+          {/* 4. Ficheiros */}
+          <Pressable
+            style={styles.menuItem}
+            onPress={handlePickDocument}
+          >
+            <View style={styles.menuIconCircle}>
+              <Icon name="attach-outline" size={20} color={C.ink} />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <Txt size={15} weight="700">
+                Ficheiros
+              </Txt>
+              <Txt size={12} color={C.muted}>
+                Documentos e dados
+              </Txt>
+            </View>
+            <Icon name="chevron-forward" size={16} color={C.muted} />
+          </Pressable>
+
+          <View style={styles.menuDivider} />
+
+          {/* 5. Capture */}
+          <Pressable
+            style={styles.menuItem}
+            onPress={() => {
+              closeTools();
+              setLibraryOpen(true);
+            }}
+          >
+            <View style={styles.menuIconCircle}>
+              <Icon name="aperture-outline" size={20} color={C.ink} />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <Txt size={15} weight="700">
+                Capture
+              </Txt>
+              <Txt size={12} color={C.muted}>
+                Enviar conteúdo capturado
+              </Txt>
+            </View>
+            <Icon name="chevron-forward" size={16} color={C.muted} />
+          </Pressable>
+
+          <View style={styles.menuDivider} />
+
+          {/* 6. Plugins */}
+          <Pressable
+            style={styles.menuItem}
+            onPress={() => {
+              closeTools();
+              setSettingsOpen(true);
+            }}
+          >
+            <View style={styles.menuIconCircle}>
+              <Icon name="extension-puzzle-outline" size={20} color={C.ink} />
+            </View>
+            <View style={{ flex: 1, gap: 1 }}>
+              <Txt size={15} weight="700">
+                Plugins
+              </Txt>
+              <Txt size={12} color={C.muted}>
+                Agentes e integrações
+              </Txt>
+            </View>
+            <Icon name="chevron-forward" size={16} color={C.muted} />
+          </Pressable>
+        </Animated.View>
       )}
 
       {/* Attachment Chip Preview */}
@@ -690,12 +985,25 @@ export function ChatScreen(props: Props) {
           accessibilityLabel="Mensagem ao agente"
         />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-          <RoundButton
-            icon="add"
-            label="Adicionar anexo"
-            size={46}
-            onPress={() => setShowTools(!showTools)}
-          />
+          {/* Animated Rotate Button: '+' spins 45deg to 'x' */}
+          <Animated.View style={{ transform: [{ rotate: spin }] }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Ferramentas e anexos"
+              onPress={toggleTools}
+              style={[
+                styles.plusButton,
+                showTools && { backgroundColor: C.ink, borderColor: C.ink },
+              ]}
+            >
+              <Icon
+                name="add"
+                size={23}
+                color={showTools ? C.white : C.ink}
+              />
+            </Pressable>
+          </Animated.View>
+
           <View style={styles.agentChip}>
             <AgentAvatar size={22} />
             <Txt size={14} weight="600" numberOfLines={1} style={{ flexShrink: 1 }}>
@@ -716,7 +1024,7 @@ export function ChatScreen(props: Props) {
               const curAtt = attachment;
               setDraft('');
               setAttachment(null);
-              setShowTools(false);
+              closeTools();
               try {
                 await props.onSend(text, curAtt || undefined);
               } catch {
@@ -1106,6 +1414,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#F3F4F6',
     borderBottomLeftRadius: 4,
   },
+  copyPillContainer: {
+    marginBottom: 6,
+    alignSelf: 'flex-end',
+  },
+  copyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: C.ink,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+  },
   composer: {
     marginHorizontal: 17,
     marginBottom: 12,
@@ -1125,6 +1451,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     textAlignVertical: 'top',
   },
+  plusButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: C.surface2,
+    borderWidth: 1,
+    borderColor: C.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   agentChip: {
     height: 44,
     borderRadius: 30,
@@ -1136,19 +1472,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     maxWidth: 168,
   },
-  toolsBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderColor: '#F1F1F1',
-    backgroundColor: C.surface2,
+  floatingMenuCard: {
+    backgroundColor: C.white,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    marginHorizontal: 17,
+    marginBottom: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    elevation: 8,
   },
-  toolBtn: {
+  menuItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+  },
+  menuIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginHorizontal: 10,
   },
   attachmentChip: {
     flexDirection: 'row',
