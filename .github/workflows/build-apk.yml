@@ -89,7 +89,7 @@ jobs:
           APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
           if [ -n "$APK_FOUND" ]; then
             echo "APK generated successfully: $APK_FOUND"
-            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.1.7.apk
+            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.1.8.apk
             ls -la build-output/
           else
             echo "Error: No APK file was generated!"
@@ -99,7 +99,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cell-agent-mobile-v0.1.7-apk
+          name: cell-agent-mobile-v0.1.8-apk
           path: build-output/*.apk
           retention-days: 30
 
@@ -107,28 +107,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_FILE="build-output/cell-agent-mobile-v0.1.7.apk"
+          APK_FILE="build-output/cell-agent-mobile-v0.1.8.apk"
           if [ -f "$APK_FILE" ]; then
             echo "Publishing release with APK: $APK_FILE"
-            if gh release view v0.1.7 >/dev/null 2>&1; then
-              gh release upload v0.1.7 "$APK_FILE" --clobber
+            if gh release view v0.1.8 >/dev/null 2>&1; then
+              gh release upload v0.1.8 "$APK_FILE" --clobber
             else
-              gh release create v0.1.7 "$APK_FILE" \
-                --title "CELL AGENT Mobile v0.1.7" \
-                --notes "### CELL AGENT Mobile v0.1.7
+              gh release create v0.1.8 "$APK_FILE" \
+                --title "CELL AGENT Mobile v0.1.8" \
+                --notes "### CELL AGENT Mobile v0.1.8
 
-          APK Android pronto para instalação direta no telemóvel com sincronização total de agentes existentes e criação de novos agentes.
+          APK Android com chat ultra-fluido, envio otimista instantâneo e experiência de conversa 100% natural.
 
-          #### Principais Correções e Melhorias nesta versão:
-          - **Sincronização Total com o Site:** Os agentes e fluxos criados previamente no website agora aparecem de imediato após o login. A consulta foi otimizada para respeitar as políticas de RLS do Supabase sem bloqueios indevidos por workspace_id padrão.
-          - **Criação de Agentes Funcional no Servidor:** Resolvido o erro de gravação na tabela \`cells_workflows\`. O payload agora injeta obrigatoriamente \`user_id\`, \`workspace_id\` dinâmico, \`viewport\` e nós válidos, garantindo integridade e conformidade estrita com o Postgres RLS.
-          - **Resolução Inteligente de Workspaces:** Descoberta e associação automática ao workspace ativo do utilizador (\`cells_workspaces\`, \`cells_workspace_members\` ou criação automática via \`bootstrap_cell_workspace\`).
-          - **Expansão de Nós de Agente:** Se um fluxo contiver múltiplos agentes criados no Agent Studio, cada um deles é listado individualmente com o seu respetivo papel, instruções e configurações de inteligência.
-          - **Histórico Real Conectado:** O histórico de conversa está diretamente ligado ao motor do website (\`/api/agents/runs\`), permitindo ver no telemóvel o que foi falado no site e vice-versa.
+          #### Principais Novidades e Otimizações nesta versão:
+          - **Envio Otimista Instantâneo (0ms):** A tua mensagem aparece de imediato na conversa com animação suave de entrada, sem qualquer bloqueio ou travamento enquanto o agente processa.
+          - **Indicador Dinâmico e Natural:** Remoção total da mensagem 'A executar missão no backend...'. Em seu lugar, surge um balão de pensamento minimalista com 3 pontos pulsantes em tempo real diretamente no fluxo da conversa.
+          - **Balões com Alto Contraste e Elegância:** Balões do utilizador em preto azeviche profundo (\`#111111\`) com texto branco cristalino e cauda ergonómica; respostas do assistente em cinza claro refinado (\`#F3F4F6\`) com transição suave.
+          - **Linguagem Natural e Humana:** Interface purificada sem termos robóticos ou técnicos ('backend', 'missão', 'servidor'). Estados claros como 'A pensar...', 'Disponível' e 'Conversar com o agente'.
+          - **Rolagem e Teclado Suaves:** O chat desliza automaticamente e com precisão para a última mensagem, mantendo o teclado reativo e a composição sempre acessível.
 
           #### Como instalar no telemóvel:
-          1. Descarregue o ficheiro **cell-agent-mobile-v0.1.7.apk** abaixo diretamente no seu smartphone Android.
+          1. Descarregue o ficheiro **cell-agent-mobile-v0.1.8.apk** abaixo diretamente no seu smartphone Android.
           2. Abra o arquivo descarregado e confirme a instalação (ative 'Permitir desta fonte' se solicitado).
-          3. Abra o **CELL AGENT** e inicie sessão com a sua conta!"
+          3. Abra o **CELL AGENT** e converse com os seus agentes com máxima fluidez!"
             fi
           fi

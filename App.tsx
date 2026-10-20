@@ -223,7 +223,22 @@ function Root() {
 
   const sendMessage = async (content: string, attachment?: FileAttachment) => {
     if (!activeAgent) return;
+
+    const optimisticId = `opt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const optimisticMsg: AgentMessage = {
+      id: optimisticId,
+      agentId: activeAgent.id,
+      role: 'user',
+      content,
+      createdAt: new Date().toISOString(),
+      status: 'sent',
+      attachments: attachment ? [{ name: attachment.name, mimeType: attachment.mimeType }] : undefined,
+    };
+
+    // Instant optimistic update: user's message appears immediately on screen
+    setMessages((prev) => [...prev, optimisticMsg]);
     setBusy(true);
+
     try {
       await gateway.sendMessage(
         activeAgent.id,
@@ -235,6 +250,9 @@ function Root() {
       const acts = await gateway.getActivity(session ?? undefined);
       setActivity(acts);
     } catch (e) {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === optimisticId ? { ...m, status: 'failed' } : m))
+      );
       notify(e instanceof Error ? e.message : 'Erro ao enviar mensagem.');
       throw e;
     } finally {

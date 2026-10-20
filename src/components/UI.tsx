@@ -7,8 +7,27 @@ type IconName = React.ComponentProps<typeof Ionicons>['name'];
 export const Txt = ({ children, size = 16, weight = '400', color = C.ink, style, numberOfLines }: { children: React.ReactNode; size?: number; weight?: '400'|'500'|'600'|'700'|'800'; color?: string; style?: any; numberOfLines?: number }) =>
   <Text numberOfLines={numberOfLines} style={[{ fontSize: size, color, fontWeight: weight, letterSpacing: -0.4 }, style]}>{children}</Text>;
 export function Icon({ name, size = 23, color = C.ink }: { name: IconName; size?: number; color?: string }) { return <Ionicons name={name} color={color} size={size}/>; }
-export function RoundButton({ icon, onPress, primary, size = 48, label }: { icon: IconName; onPress: () => void; primary?: boolean; size?: number; label: string }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={[styles.round, { width: size, height: size, backgroundColor: primary ? C.ink : C.surface2, borderColor: primary ? C.ink : C.border }]}><Icon name={icon} color={primary ? C.white : C.ink}/></Pressable>;
+export function RoundButton({ icon, onPress, primary, size = 48, label, disabled }: { icon: IconName; onPress: () => void; primary?: boolean; size?: number; label: string; disabled?: boolean }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        styles.round,
+        {
+          width: size,
+          height: size,
+          backgroundColor: primary ? C.ink : C.surface2,
+          borderColor: primary ? C.ink : C.border,
+          opacity: disabled ? 0.35 : 1,
+        },
+      ]}
+    >
+      <Icon name={icon} color={primary ? C.white : C.ink} />
+    </Pressable>
+  );
 }
 export function Pill({ children, onPress, selected, style }: { children: React.ReactNode; onPress?: () => void; selected?: boolean; style?: ViewStyle }) {
   return <Pressable onPress={onPress} disabled={!onPress} style={[styles.pill, selected && { backgroundColor: C.ink }, style]}><Txt weight="600" size={15} color={selected ? C.white : C.ink}>{children}</Txt></Pressable>;

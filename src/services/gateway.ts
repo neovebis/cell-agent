@@ -496,7 +496,7 @@ class RealCellGateway implements CellGateway {
 
       if (!res.ok) {
         const errRetry = await res.json().catch(() => ({}));
-        throw new Error(errRetry.message || err.message || 'Não foi possível guardar o agente no servidor.');
+        throw new Error(errRetry.message || err.message || 'Não foi possível criar o agente.');
       }
     }
 
@@ -665,7 +665,7 @@ class RealCellGateway implements CellGateway {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Falha ao guardar perfil do agente no servidor.');
+      throw new Error(err.message || 'Falha ao guardar configurações do agente.');
     }
   }
 
@@ -757,16 +757,16 @@ class RealCellGateway implements CellGateway {
                   currentRun.final_output ||
                   currentRun.output ||
                   currentRun.summary ||
-                  'Missão concluída com sucesso.';
+                  'Resposta concluída.';
                 break;
               } else if (currentRun?.status === 'failed') {
                 answerText =
                   currentRun.last_error ||
                   currentRun.summary ||
-                  'A execução do agente encontrou uma falha no CELL SYSTEM.';
+                  'Ocorreu uma dificuldade ao gerar a resposta. Por favor tenta novamente.';
                 break;
               } else if (currentRun?.status === 'waiting_approval') {
-                answerText = `Ação pendente de aprovação manual: ${currentRun.approval?.reason || 'Operação sensível'}`;
+                answerText = `A aguardar autorização: ${currentRun.approval?.reason || 'Operação sensível'}`;
                 break;
               }
             }
@@ -783,12 +783,12 @@ class RealCellGateway implements CellGateway {
             };
             await this.saveLocalMessage(assistantMessage);
           } else {
-            // Long running mission notification
+            // Processing taking longer than usual
             const pendingNotice: AgentMessage = {
               id: uid(),
               agentId,
               role: 'assistant',
-              content: `A missão continua a executar em segundo plano (ID: ${runId.slice(0, 8)}). Podes acompanhar os passos no separador Atividade.`,
+              content: `Ainda a terminar o processamento do teu pedido em segundo plano. Podes acompanhar o progresso no separador Atividade.`,
               createdAt: now(),
               status: 'sent',
             };
@@ -797,14 +797,14 @@ class RealCellGateway implements CellGateway {
         }
       } else {
         const errorBody = await res.json().catch(() => ({}));
-        throw new Error(errorBody.message || 'Erro ao submeter missão para o agente.');
+        throw new Error(errorBody.message || 'Não foi possível contactar o agente neste momento.');
       }
     } catch (e: any) {
       const errorMessage: AgentMessage = {
         id: uid(),
         agentId,
         role: 'assistant',
-        content: `⚠️ Não foi possível obter resposta: ${e?.message || 'Falha de ligação.'}`,
+        content: `Não foi possível obter resposta: ${e?.message || 'Verifica a ligação à internet.'}`,
         createdAt: now(),
         status: 'failed',
       };
