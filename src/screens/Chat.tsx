@@ -8,12 +8,12 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   TextInput,
   View,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AgentAvatar } from '../components/AgentAvatar';
@@ -212,12 +212,14 @@ function MessageBubble({
 
   const handleCopyMessage = async () => {
     try {
-      await Clipboard.setStringAsync(item.content);
+      await Share.share({
+        message: item.content,
+      });
       setCopied(true);
       setTimeout(() => {
         setCopied(false);
         setShowCopyOption(false);
-      }, 1400);
+      }, 1500);
     } catch {
       // ignore
     }

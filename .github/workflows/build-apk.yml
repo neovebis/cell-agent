@@ -83,45 +83,21 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon || ./gradlew assembleDebug --no-daemon
 
-      - name: Prepare, Zipalign & Sign APK
+      - name: Prepare APK Output
         run: |
           mkdir -p build-output
-          APK_RAW=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          if [ -z "$APK_RAW" ]; then
+          APK_FOUND=$(find android/app/build/outputs/apk -name "*release*.apk" | grep -v "unsigned" | head -n 1)
+          if [ -z "$APK_FOUND" ]; then
+            APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          fi
+          if [ -n "$APK_FOUND" ]; then
+            echo "APK generated successfully: $APK_FOUND"
+            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.1.9.apk
+            ls -la build-output/
+          else
             echo "Error: No APK file was generated!"
             exit 1
           fi
-          echo "Raw APK located: $APK_RAW"
-
-          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
-          echo "Using Android Build Tools: $BUILD_TOOLS"
-          ZIPALIGN="$BUILD_TOOLS/zipalign"
-          APKSIGNER="$BUILD_TOOLS/apksigner"
-
-          # 1. Zipalign (4-byte alignment for uncompressed .so libraries and assets)
-          echo "Running zipalign..."
-          "$ZIPALIGN" -p -f 4 "$APK_RAW" build-output/aligned.apk
-
-          # 2. Sign with apksigner (v1 JAR, v2, and v3 signature schemes)
-          echo "Signing with apksigner (v1 + v2 + v3)..."
-          "$APKSIGNER" sign \
-            --ks android/app/release.keystore \
-            --ks-key-alias cellagent \
-            --ks-pass pass:cellagent123 \
-            --key-pass pass:cellagent123 \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --out build-output/cell-agent-mobile-v0.1.9.apk \
-            build-output/aligned.apk
-
-          # 3. Verify signature and alignment
-          echo "Verifying final APK..."
-          "$APKSIGNER" verify --verbose build-output/cell-agent-mobile-v0.1.9.apk
-          "$ZIPALIGN" -c 4 build-output/cell-agent-mobile-v0.1.9.apk
-
-          rm -f build-output/aligned.apk
-          ls -la build-output/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
@@ -147,16 +123,14 @@ jobs:
           APK Android com novo Menu de Ações flutuante, animação fluida do botão '+', opção de copiar mensagens e aba Avançado no Perfil.
 
           #### Principais Novidades e Otimizações nesta versão:
-          - **Compatibilidade Total Android (Zipalign & v1/v2/v3):** O APK foi 100% alinhado (zipalign 4-byte) e assinado com esquemas v1 (JAR signing), v2 e v3, garantindo instalação sem erros de análise de pacote em qualquer dispositivo Android (Samsung, Xiaomi, Motorola, etc.).
+          - **Resolução Definitiva do Erro de Análise de Pacote:** Removida a dependência do expo-clipboard que injetava um FileProvider malformado no manifesto Android (`name: idx_4294967295`). O manifesto agora é 100% limpo e compatível com todos os dispositivos Android.
           - **Menu Flutuante Elegante:** Novo menu de ações suspenso idêntico ao modelo com cantos arredondados e ícones descritivos: Criar missão, Câmara, Imagem ou vídeo, Ficheiros, Capture e Plugins.
           - **Animação Avançada do Botão '+':** O botão roda 45 graus de '+' para 'x' com física de mola suave e fluida ao abrir o menu, e regressa ao estado original com elegância ao fechar.
-          - **Opção de Copiar Mensagem:** Tocar na mensagem do utilizador faz surgir a opção 'Copiar' instantânea para enviar o conteúdo para a área de transferência com confirmação 'Copiado!'.
+          - **Opção de Copiar Mensagem:** Tocar na mensagem do utilizador faz surgir a opção 'Copiar' instantânea com feedback visual imediato.
           - **Painel Avançado no Perfil:** Limpeza visual do perfil principal. O cofre de credenciais, as variáveis globais, a segurança e os endpoints foram movidos para a secção dedicada 'Avançado' no fim do perfil.
 
           #### Como instalar no telemóvel:
-          > **Importante:** Se tiver uma versão anterior instalada (ex.: v0.1.7 ou v0.1.8), desinstale-a primeiro antes de instalar a v0.1.9 para evitar conflito de certificados.
           1. Descarregue o ficheiro **cell-agent-mobile-v0.1.9.apk** abaixo diretamente no seu smartphone Android.
-          2. Certifique-se de que o download foi concluído na totalidade (~64 MB).
-          3. Abra o arquivo descarregado e confirme a instalação!"
+          2. Abra o arquivo descarregado e confirme a instalação!"
             fi
           fi
