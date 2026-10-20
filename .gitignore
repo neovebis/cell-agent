@@ -7,7 +7,6 @@ ios/
 .env
 .env.local
 *.log
+*.keystore
 .DS_Store
 Thumbs.db
-downloaded-apk/
-!release.keystore

@@ -54,22 +54,22 @@ jobs:
       - name: Setup Keystore & Signing Config
         run: |
           mkdir -p android/app
-          if [ -f "release.keystore" ]; then
-            echo "Using persistent repository release keystore"
-            cp release.keystore android/app/release.keystore
-          elif [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
             echo "Using custom keystore from repository secrets"
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
+            export KEY_ALIAS="${{ secrets.KEYSTORE_ALIAS }}"
+            export STORE_PASS="${{ secrets.KEYSTORE_PASSWORD }}"
+            export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
           else
             echo "Generating self-signed release keystore for standalone APK"
             keytool -genkeypair -v -storetype PKCS12 -keystore android/app/release.keystore \
               -alias cellagent -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=CELL AGENT, OU=Mobile, O=CellSystem, L=Luanda, ST=Luanda, C=AO" \
+              -dname "CN=CELL AGENT, OU=Mobile, O=CellSystem, L=Luanda, S=Luanda, C=AO" \
               -storepass cellagent123 -keypass cellagent123
+            export KEY_ALIAS="cellagent"
+            export STORE_PASS="cellagent123"
+            export KEY_PASS="cellagent123"
           fi
-          export KEY_ALIAS="cellagent"
-          export STORE_PASS="cellagent123"
-          export KEY_PASS="cellagent123"
           node scripts/configure-signing.js
 
       - name: Build Android Release APK
@@ -86,13 +86,10 @@ jobs:
       - name: Prepare APK Output
         run: |
           mkdir -p build-output
-          APK_FOUND=$(find android/app/build/outputs/apk -name "*release*.apk" | grep -v "unsigned" | head -n 1)
-          if [ -z "$APK_FOUND" ]; then
-            APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          fi
+          APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
           if [ -n "$APK_FOUND" ]; then
             echo "APK generated successfully: $APK_FOUND"
-            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.2.0.apk
+            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.2.1.apk
             ls -la build-output/
           else
             echo "Error: No APK file was generated!"
@@ -102,7 +99,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cell-agent-mobile-v0.2.0-apk
+          name: cell-agent-mobile-v0.2.1-apk
           path: build-output/*.apk
           retention-days: 30
 
@@ -110,27 +107,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_FILE="build-output/cell-agent-mobile-v0.2.0.apk"
+          APK_FILE="build-output/cell-agent-mobile-v0.2.1.apk"
           if [ -f "$APK_FILE" ]; then
             echo "Publishing release with APK: $APK_FILE"
-            if gh release view v0.2.0 >/dev/null 2>&1; then
-              gh release upload v0.2.0 "$APK_FILE" --clobber
+            if gh release view v0.2.1 >/dev/null 2>&1; then
+              gh release upload v0.2.1 "$APK_FILE" --clobber
             else
-              gh release create v0.2.0 "$APK_FILE" \
-                --title "CELL AGENT Mobile v0.2.0" \
-                --notes "### CELL AGENT Mobile v0.2.0
+              gh release create v0.2.1 "$APK_FILE" \
+                --title "CELL AGENT Mobile v0.2.1" \
+                --notes "### CELL AGENT Mobile v0.2.1
 
-          APK Android com novo Menu de Ações flutuante, animação fluida do botão '+', opção de copiar mensagens e aba Avançado no Perfil.
-
-          #### Principais Novidades e Otimizações nesta versão:
-          - **Resolução Definitiva do Erro de Análise de Pacote:** Removida a dependência do expo-clipboard que injetava um FileProvider malformado no manifesto Android (\`name: idx_4294967295\`). O manifesto agora é 100% limpo e compatível com todos os dispositivos Android.
-          - **Menu Flutuante Elegante:** Novo menu de ações suspenso idêntico ao modelo com cantos arredondados e ícones descritivos: Criar missão, Câmara, Imagem ou vídeo, Ficheiros, Capture e Plugins.
-          - **Animação Avançada do Botão '+':** O botão roda 45 graus de '+' para 'x' com física de mola suave e fluida ao abrir o menu, e regressa ao estado original com elegância ao fechar.
-          - **Opção de Copiar Mensagem:** Tocar na mensagem do utilizador faz surgir a opção 'Copiar' instantânea com feedback visual imediato.
-          - **Painel Avançado no Perfil:** Limpeza visual do perfil principal. O cofre de credenciais, as variáveis globais, a segurança e os endpoints foram movidos para a secção dedicada 'Avançado' no fim do perfil.
-
-          #### Como instalar no telemóvel:
-          1. Descarregue o ficheiro **cell-agent-mobile-v0.2.0.apk** abaixo diretamente no seu smartphone Android.
-          2. Abra o arquivo descarregado e confirme a instalação!"
+          Compilação restaurada para o método exato da v0.1.8 com todas as novas funcionalidades:
+          - Menu de Ações flutuante suspenso com cantos arredondados (Criar missão, Câmara, Imagem ou vídeo, Ficheiros, Capture e Plugins).
+          - Animação elegante do botão '+' rodando 45 graus para 'x'.
+          - Opção de copiar mensagem ao tocar na mensagem do utilizador.
+          - Cartão 'Avançado' no fim do Perfil abrindo modal dedicada com Cofre, Segurança e Endpoints."
             fi
           fi
