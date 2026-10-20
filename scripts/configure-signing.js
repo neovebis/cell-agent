@@ -20,6 +20,8 @@ const releaseSigning = `
             storePassword '${storePass}'
             keyAlias '${keyAlias}'
             keyPassword '${keyPass}'
+            v1SigningEnabled true
+            v2SigningEnabled true
         }`;
 
 // Inject release signingConfig if not already present
@@ -44,4 +46,4 @@ if (content.includes('buildTypes {')) {
 }
 
 fs.writeFileSync(gradlePath, content);
-console.log('Successfully configured release signing in android/app/build.gradle');
+console.log('Successfully configured release signing with v1 & v2 in android/app/build.gradle');
