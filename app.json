@@ -3,7 +3,7 @@
     "name": "CELL AGENT",
     "slug": "cell-agent-mobile",
     "scheme": "cellagent",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFFFFF",
@@ -21,6 +21,7 @@
     },
     "android": {
       "package": "com.cellsystem.agent.mobile",
+      "versionCode": 5,
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO"
