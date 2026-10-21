@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,8 +24,10 @@ import { ProfileScreen } from './src/screens/Profile';
 import { gateway } from './src/services/gateway';
 import { enableNotifications } from './src/services/notifications';
 import { forgetSession, loadSession, saveSession } from './src/services/session';
+import { stripUiInstruction } from './src/services/smartui';
 import { C } from './src/theme';
 import type {
+  SendOptions,
   ActivityItem,
   Agent,
   AgentConfig,
@@ -56,16 +58,16 @@ function Login({
       contentContainerStyle={{
         flexGrow: 1,
         justifyContent: 'center',
-        padding: 30,
+        padding: 26,
         backgroundColor: C.white,
       }}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={{ alignItems: 'center', marginBottom: 35 }}>
-        <AgentAvatar size={86} />
+      <View style={{ alignItems: 'center', marginBottom: 31 }}>
+        <AgentAvatar size={76} />
       </View>
       <PageTitle kicker="A tua conta do CELL SYSTEM" title="Bem-vindo" />
-      <Txt color={C.muted} size={14} style={{ marginBottom: 28, lineHeight: 20 }}>
+      <Txt color={C.muted} size={12} style={{ marginBottom: 25, lineHeight: 18 }}>
         Inicia sessão com as credenciais do teu espaço. Os teus fluxos, agentes e permissões serão
         sincronizados em tempo real.
       </Txt>
@@ -83,7 +85,7 @@ function Login({
         placeholder="Palavra-passe"
         value={password}
         onChangeText={setPassword}
-        style={[styles.input, { marginTop: 12 }]}
+        style={[styles.input, { marginTop: 11 }]}
         placeholderTextColor={C.muted}
       />
       <Pressable
@@ -93,7 +95,7 @@ function Login({
       >
         {busy ? <ActivityIndicator color={C.white} /> : <Txt color={C.white} weight="700">Entrar</Txt>}
       </Pressable>
-      <Txt color={C.muted} size={11} style={{ marginTop: 20, lineHeight: 18 }}>
+      <Txt color={C.muted} size={10} style={{ marginTop: 18, lineHeight: 16 }}>
         Autenticação direta e segura via Supabase Auth com encriptação TLS de ponta a ponta.
       </Txt>
     </ScrollView>
@@ -116,10 +118,13 @@ function Root() {
   const [busy, setBusy] = useState(false);
 
   const notify = (msg: string) => Alert.alert('CELL AGENT', msg);
+  // Bumped on every workspace switch so in-flight refreshes for the old workspace are discarded
+  const workspaceEpoch = useRef(0);
 
   const refresh = useCallback(async (currentSession: Session | null) => {
     if (!gateway.demo && !currentSession) return;
     const auth = currentSession ?? undefined;
+    const epoch = workspaceEpoch.current;
 
     const results = await Promise.allSettled([
       gateway.getAgents(auth),
@@ -130,6 +135,9 @@ function Root() {
       gateway.getCredentials(auth),
       gateway.getVariables(auth),
     ]);
+
+    // Ignore stale results if the workspace changed while this refresh was in flight
+    if (epoch !== workspaceEpoch.current) return;
 
     if (results[0].status === 'fulfilled') {
       setAgents(results[0].value);
@@ -215,13 +223,21 @@ function Root() {
     return () => back.remove();
   }, [tab, activeAgent]);
 
+  useEffect(() => {
+    const wsId = session?.workspaceId;
+    if (activeAgent && wsId && activeAgent.workspaceId && activeAgent.workspaceId !== wsId) {
+      setActiveAgent(null);
+      setMessages([]);
+    }
+  }, [session?.workspaceId, activeAgent]);
+
   const openAgent = (agent: Agent) => {
     setActiveAgent(agent);
     setMessages([]);
     loadMessages(agent, session);
   };
 
-  const sendMessage = async (content: string, attachment?: FileAttachment) => {
+  const sendMessage = async (content: string, attachment?: FileAttachment, opts?: SendOptions) => {
     if (!activeAgent) return;
 
     const optimisticId = `opt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -229,7 +245,7 @@ function Root() {
       id: optimisticId,
       agentId: activeAgent.id,
       role: 'user',
-      content,
+      content: stripUiInstruction(content),
       createdAt: new Date().toISOString(),
       status: 'sent',
       attachments: attachment ? [{ name: attachment.name, mimeType: attachment.mimeType }] : undefined,
@@ -244,12 +260,18 @@ function Root() {
         activeAgent.id,
         content,
         attachment ? [attachment] : undefined,
-        session ?? undefined
+        session ?? undefined,
+        opts
       );
       await loadMessages(activeAgent, session);
       const acts = await gateway.getActivity(session ?? undefined);
       setActivity(acts);
     } catch (e) {
+      if (opts?.interaction) {
+        // The block shows the error and a retry; no orphan bubble
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        throw e;
+      }
       setMessages((prev) =>
         prev.map((m) => (m.id === optimisticId ? { ...m, status: 'failed' } : m))
       );
@@ -345,6 +367,8 @@ function Root() {
   const switchWorkspace = async (workspaceId: string) => {
     if (!session) return;
     const updated: Session = { ...session, workspaceId };
+    workspaceEpoch.current += 1;
+    setAgents([]);
     await saveSession(updated);
     setSession(updated);
     setActiveAgent(null);
@@ -379,6 +403,16 @@ function Root() {
     setTab('Chat');
   };
 
+  useEffect(() => {
+    gateway.onSessionExpired = () => {
+      logout().catch(() => {});
+      notify('Sessão expirada. Inicia sessão novamente.');
+    };
+    return () => {
+      gateway.onSessionExpired = undefined;
+    };
+  });
+
   const doNotifications = async () => {
     try {
       notify(await enableNotifications(gateway, session ?? undefined));
@@ -401,6 +435,11 @@ function Root() {
     <View style={{ flex: 1, backgroundColor: C.white }}>
       {tab === 'Chat' && (
         <ChatScreen
+          loadModels={(p) =>
+            gateway.getModelCatalog
+              ? gateway.getModelCatalog(p, session ?? undefined)
+              : Promise.resolve({ source: 'fixed' as const, models: [] })
+          }
           agents={agents}
           activeAgent={activeAgent}
           messages={messages}
@@ -479,14 +518,14 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface,
     borderWidth: 1,
     borderColor: C.border,
-    minHeight: 58,
-    paddingHorizontal: 19,
-    fontSize: 16,
+    minHeight: 51,
+    paddingHorizontal: 17,
+    fontSize: 14,
     color: C.ink,
   },
   loginButton: {
-    marginTop: 22,
-    height: 56,
+    marginTop: 19,
+    height: 49,
     borderRadius: 50,
     backgroundColor: C.ink,
     alignItems: 'center',

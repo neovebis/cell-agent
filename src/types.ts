@@ -63,6 +63,72 @@ export interface AgentMessage {
   createdAt: string;
   status?: 'sending' | 'sent' | 'failed';
   attachments?: { name: string; mimeType: string }[];
+  /** Optional structured "smart UI" rendered below the text. */
+  ui?: SmartUi;
+}
+
+export type UiTone = 'up' | 'down' | 'flat';
+export interface UiFormField {
+  name: string;
+  label: string;
+  kind: 'text' | 'number' | 'select' | 'toggle';
+  options?: string[];
+  required?: boolean;
+  placeholder?: string;
+}
+export interface ModelCatalog {
+  /** 'live' = from the user's vault key via the backend; 'fixed' = curated fallback list. */
+  source: 'live' | 'fixed';
+  models: { id: string; label: string; note?: string }[];
+  /** Short pt-PT note explaining a fallback. */
+  note?: string;
+}
+
+export interface SendOptions {
+  /** Called as soon as the backend accepts the run (POST succeeded). */
+  onAccepted?: () => void;
+  /**
+   * Smart-UI interaction: if the POST fails, the local user message is removed and the
+   * error is thrown (no error bubble) so the block can offer "Tentar novamente".
+   */
+  interaction?: boolean;
+}
+
+/** A submitted answer to an interactive block (persisted locally so the block stays locked). */
+export interface UiAnswer {
+  action: string;
+  values: Record<string, unknown>;
+  summary: string;
+}
+export type UiBlock =
+  | { type: 'prose'; text: string }
+  | { type: 'callout'; title?: string; text: string }
+  | { type: 'kpis'; items: { label: string; value: string; delta?: string; hint?: string; tone?: UiTone }[] }
+  | {
+      type: 'table';
+      title?: string;
+      columns: { key: string; label: string; align?: 'left' | 'right' }[];
+      rows: Record<string, string>[];
+    }
+  | { type: 'bars'; title?: string; unit?: string; items: { label: string; value: number; note?: string }[] }
+  | { type: 'steps'; title?: string; items: { title: string; detail?: string }[] }
+  | { type: 'checklist'; title?: string; items: { label: string; done?: boolean }[] }
+  | { type: 'chart'; title?: string; kind: 'bar' | 'line' | 'area' | 'pie'; xKey: string; series: { key: string; label: string }[]; data: Record<string, string | number>[] }
+  | { type: 'choices'; id: string; title?: string; multi?: boolean; submit?: string; options: { id: string; label: string }[] }
+  | { type: 'confirm'; id: string; title?: string; text: string; approve?: string; reject?: string; tone?: 'danger' }
+  | { type: 'form'; id: string; title?: string; submit?: string; fields: UiFormField[] }
+  | {
+      type: 'timeline';
+      title?: string;
+      events: { when: string; title: string; detail?: string; state?: 'done' | 'now' | 'next' }[];
+    };
+
+export interface SmartUi {
+  v: 1;
+  title?: string;
+  kicker?: string;
+  summary?: string;
+  blocks: UiBlock[];
 }
 
 export interface CaptureItem {
@@ -120,6 +186,9 @@ export interface GlobalVariableItem {
 
 export interface Session {
   accessToken: string;
+  refreshToken?: string;
+  /** Epoch ms when accessToken expires. */
+  expiresAt?: number;
   displayName: string;
   email?: string;
   workspaceId?: string;
@@ -144,9 +213,11 @@ export interface CellGateway {
     agentId: string,
     content: string,
     attachments?: FileAttachment[],
-    session?: Session
+    session?: Session,
+    opts?: SendOptions
   ): Promise<AgentMessage>;
   clearMessages(agentId: string): Promise<void>;
+  getModelCatalog?(provider: string, session?: Session): Promise<ModelCatalog>;
   getCaptures(session?: Session): Promise<CaptureItem[]>;
   saveCapture(
     item: Omit<CaptureItem, 'id' | 'createdAt' | 'synced'>,
@@ -159,4 +230,6 @@ export interface CellGateway {
   getCredentials(session?: Session): Promise<CredentialVaultItem[]>;
   getVariables(session?: Session): Promise<GlobalVariableItem[]>;
   registerPush(token: string, session?: Session): Promise<void>;
+  /** Optional hook fired when the session expired and could not be refreshed. */
+  onSessionExpired?: () => void;
 }

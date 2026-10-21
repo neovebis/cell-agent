@@ -39,7 +39,7 @@ const strokes = {
   ],
 } satisfies Record<Tab, string[]>;
 
-export function ReferenceTabIcon({ tab, active, size = 25 }: { tab: Tab; active: boolean; size?: number }) {
+export function ReferenceTabIcon({ tab, active, size = 22 }: { tab: Tab; active: boolean; size?: number }) {
   const color = active ? '#090909' : '#858585';
   // Keep stable viewBox, 25pt icon and identical 2px line family on iOS/Android.
   return <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">

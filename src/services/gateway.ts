@@ -1,4 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
+import { forgetSession, saveSession } from './session';
+import { modelsFor } from './models';
+import { parseAgentOutput, stripUiInstruction, withUiInstruction } from './smartui';
 import type {
   ActivityItem,
   Agent,
@@ -10,6 +13,8 @@ import type {
   CredentialVaultItem,
   FileAttachment,
   GlobalVariableItem,
+  ModelCatalog,
+  SendOptions,
   Session,
   WorkspaceInfo,
 } from '../types';
@@ -39,6 +44,64 @@ const MESSAGES_STORAGE_KEY = 'cell_mobile_messages_store_v2';
 class RealCellGateway implements CellGateway {
   demo = false as const;
 
+  /** Called when the session can no longer be refreshed (user must sign in again). */
+  onSessionExpired?: () => void;
+
+  private refreshing: Promise<boolean> | null = null;
+
+  private async refreshSession(session: Partial<Session>): Promise<boolean> {
+    if (!session.refreshToken) return false;
+    if (!this.refreshing) {
+      this.refreshing = (async () => {
+        try {
+          const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+            method: 'POST',
+            headers: { apikey: supabaseAnonKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: session.refreshToken }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.access_token) return false;
+          session.accessToken = data.access_token;
+          session.refreshToken = data.refresh_token || session.refreshToken;
+          session.expiresAt = Date.now() + Number(data.expires_in || 3600) * 1000;
+          if (session.displayName) await saveSession(session as Session).catch(() => {});
+          return true;
+        } catch {
+          return false;
+        }
+      })().finally(() => {
+        this.refreshing = null;
+      });
+    }
+    return this.refreshing;
+  }
+
+  private async expireSession(): Promise<void> {
+    await forgetSession().catch(() => {});
+    this.onSessionExpired?.();
+  }
+
+  /**
+   * fetch with the session's bearer token: refreshes shortly before expiry and,
+   * on a 401, refreshes once and retries. Clears the session if refresh fails.
+   */
+  private async authFetch(session: Partial<Session>, url: string, init: RequestInit = {}): Promise<Response> {
+    if (session.refreshToken && session.expiresAt && Date.now() > session.expiresAt - 60_000) {
+      if (!(await this.refreshSession(session))) await this.expireSession();
+    }
+    const withToken = (): RequestInit => ({
+      ...init,
+      headers: { ...((init.headers as Record<string, string>) || {}), Authorization: `Bearer ${session.accessToken}` },
+    });
+    const res = await fetch(url, withToken());
+    if (res.status !== 401 || !session.refreshToken) return res;
+    if (!(await this.refreshSession(session))) {
+      await this.expireSession();
+      return res;
+    }
+    return fetch(url, withToken());
+  }
+
   private async getLocalMessages(): Promise<AgentMessage[]> {
     try {
       const raw = await SecureStore.getItemAsync(MESSAGES_STORAGE_KEY);
@@ -53,6 +116,15 @@ class RealCellGateway implements CellGateway {
       const list = await this.getLocalMessages();
       const updated = [...list, msg];
       await SecureStore.setItemAsync(MESSAGES_STORAGE_KEY, JSON.stringify(updated.slice(-300)));
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  private async removeLocalMessage(id: string): Promise<void> {
+    try {
+      const list = await this.getLocalMessages();
+      await SecureStore.setItemAsync(MESSAGES_STORAGE_KEY, JSON.stringify(list.filter((m) => m.id !== id)));
     } catch {
       // Non-fatal
     }
@@ -93,7 +165,7 @@ class RealCellGateway implements CellGateway {
   private async resolveActiveWorkspace(session: { accessToken: string; userId?: string }): Promise<string> {
     // 1. Try cells_workspaces table
     try {
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_workspaces?select=id,name,tier&order=created_at.desc&limit=1`,
         {
           headers: {
@@ -113,7 +185,7 @@ class RealCellGateway implements CellGateway {
     // 2. Try cells_workspace_members table
     if (session.userId) {
       try {
-        const memRes = await fetch(
+        const memRes = await this.authFetch(session, 
           `${supabaseUrl}/rest/v1/cells_workspace_members?user_id=eq.${encodeURIComponent(session.userId)}&status=eq.active&select=workspace_id&limit=1`,
           {
             headers: {
@@ -133,7 +205,7 @@ class RealCellGateway implements CellGateway {
 
     // 3. Try cells_workflows to see where existing workflows live
     try {
-      const wfRes = await fetch(
+      const wfRes = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_workflows?select=workspace_id&order=updated_at.desc&limit=1`,
         {
           headers: {
@@ -193,6 +265,8 @@ class RealCellGateway implements CellGateway {
 
     return {
       accessToken,
+      refreshToken: data.refresh_token,
+      expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
       displayName,
       email: userEmail,
       workspaceId,
@@ -205,7 +279,7 @@ class RealCellGateway implements CellGateway {
 
     // Query cells_workspaces table (tier column, not plan)
     try {
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_workspaces?select=id,name,tier,owner_id,created_at&order=created_at.desc`,
         {
           headers: {
@@ -233,7 +307,7 @@ class RealCellGateway implements CellGateway {
     // Query cells_workspace_members if cells_workspaces is empty
     if (session.userId) {
       try {
-        const memRes = await fetch(
+        const memRes = await this.authFetch(session, 
           `${supabaseUrl}/rest/v1/cells_workspace_members?user_id=eq.${encodeURIComponent(session.userId)}&status=eq.active&select=workspace_id,role`,
           {
             headers: {
@@ -263,7 +337,7 @@ class RealCellGateway implements CellGateway {
 
     try {
       // Query without hardcoded workspace_id filter so Supabase RLS returns all workflows the user can access
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_workflows?select=id,name,description,graph,viewport,workspace_id,user_id,is_active,created_at,updated_at&order=updated_at.desc&limit=100`,
         {
           headers: {
@@ -286,7 +360,11 @@ class RealCellGateway implements CellGateway {
 
           const extractedAgents: Agent[] = [];
 
-          for (const w of rows) {
+          // Only show workflows from the currently selected workspace
+          const activeWsId = session.workspaceId && session.workspaceId !== 'ws_default' ? session.workspaceId : null;
+          const scopedRows = activeWsId ? rows.filter((w: any) => w.workspace_id === activeWsId) : rows;
+
+          for (const w of scopedRows) {
             const rawNodes = Array.isArray(w.graph?.nodes) ? w.graph.nodes : [];
             const agentNodes = rawNodes.filter(
               (n: any) =>
@@ -404,7 +482,7 @@ class RealCellGateway implements CellGateway {
     let userId = session.userId;
     if (!userId) {
       try {
-        const uRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        const uRes = await this.authFetch(session, `${supabaseUrl}/auth/v1/user`, {
           headers: {
             apikey: supabaseAnonKey,
             Authorization: `Bearer ${session.accessToken}`,
@@ -461,7 +539,7 @@ class RealCellGateway implements CellGateway {
       updated_at: now(),
     };
 
-    let res = await fetch(`${supabaseUrl}/rest/v1/cells_workflows`, {
+    let res = await this.authFetch(session, `${supabaseUrl}/rest/v1/cells_workflows`, {
       method: 'POST',
       headers: {
         apikey: supabaseAnonKey,
@@ -481,7 +559,7 @@ class RealCellGateway implements CellGateway {
           payload.workspace_id = freshWsId;
           session.workspaceId = freshWsId;
           targetWsId = freshWsId;
-          res = await fetch(`${supabaseUrl}/rest/v1/cells_workflows`, {
+          res = await this.authFetch(session, `${supabaseUrl}/rest/v1/cells_workflows`, {
             method: 'POST',
             headers: {
               apikey: supabaseAnonKey,
@@ -567,7 +645,7 @@ class RealCellGateway implements CellGateway {
     const cleanWfId = workflowId.includes(':') ? workflowId.split(':')[0] : workflowId;
 
     try {
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${apiBaseUrl}/api/agents/profile?workflowId=${encodeURIComponent(cleanWfId)}`,
         {
           headers: {
@@ -639,6 +717,68 @@ class RealCellGateway implements CellGateway {
     };
   }
 
+  /**
+   * Credential the profile save uses for a provider: explicit one, else the current profile's
+   * (if same provider), else the first vault credential of that provider.
+   */
+  private async resolveCredentialId(
+    session: Session,
+    provider: string,
+    explicit?: string,
+    current?: { provider?: string; credentialId?: string }
+  ): Promise<string> {
+    if (explicit) return explicit;
+    if (current?.credentialId && current.provider === provider) return current.credentialId;
+    const creds = await this.getCredentials(session).catch(() => [] as CredentialVaultItem[]);
+    return creds.find((c) => c.provider.toLowerCase() === provider.toLowerCase())?.id || '';
+  }
+
+  private modelCache = new Map<string, ModelCatalog>();
+
+  /** Live models for the provider's vault key (backend lists them; the app never sees the key). */
+  async getModelCatalog(provider: string, session?: Session): Promise<ModelCatalog> {
+    const fixed = (note: string): ModelCatalog => ({ source: 'fixed', models: modelsFor(provider), note });
+    if (!session?.accessToken) return fixed('Sem sessão: a mostrar a lista padrão.');
+    const credentialId = await this.resolveCredentialId(session, provider);
+    if (!credentialId) return fixed('Sem API deste provedor no cofre: lista padrão.');
+
+    const cacheKey = `${session.workspaceId}:${credentialId}:${provider}`;
+    const cached = this.modelCache.get(cacheKey);
+    if (cached) return cached;
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const res = await this.authFetch(
+        session,
+        `${apiBaseUrl}/api/credentials/models?id=${encodeURIComponent(credentialId)}&provider=${encodeURIComponent(provider)}&operation=chat`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            'x-workspace-id': session.workspaceId || 'ws_default',
+          },
+          signal: ctrl.signal,
+        }
+      );
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || data?.success === false) {
+        return fixed(`Catálogo indisponível (${data?.error || `HTTP ${res.status}`}): lista padrão.`);
+      }
+      const models = (Array.isArray(data?.models) ? data.models : [])
+        .filter((m: any) => m && typeof m.id === 'string' && m.id.trim())
+        .slice(0, 300)
+        .map((m: any) => ({ id: String(m.id), label: String(m.name || m.id) }));
+      if (!models.length) return fixed('A API não devolveu modelos: lista padrão.');
+      const catalog: ModelCatalog = { source: 'live', models, note: data?.warning ? String(data.warning) : undefined };
+      this.modelCache.set(cacheKey, catalog);
+      return catalog;
+    } catch (e: any) {
+      return fixed(e?.name === 'AbortError' ? 'O catálogo demorou demasiado: lista padrão.' : 'Sem ligação ao catálogo: lista padrão.');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async saveAgentProfile(
     workflowId: string,
     profile: Partial<AgentProfile>,
@@ -646,26 +786,71 @@ class RealCellGateway implements CellGateway {
   ): Promise<void> {
     if (!session?.accessToken) throw new Error('Sessão necessária para salvar perfil.');
     const cleanWfId = workflowId.includes(':') ? workflowId.split(':')[0] : workflowId;
+    const headers = {
+      Authorization: `Bearer ${session.accessToken}`,
+      'x-workspace-id': session.workspaceId || 'ws_default',
+    };
 
-    const res = await fetch(`${apiBaseUrl}/api/agents/profile`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.accessToken}`,
-        'x-workspace-id': session.workspaceId || 'ws_default',
-      },
-      body: JSON.stringify({
-        workflowId: cleanWfId,
-        profile: {
-          ...profile.config,
-          grants: profile.grants,
+    // Start from the profile currently stored on the server (same shape the website sends back)
+    let current: Record<string, any> = {};
+    try {
+      const cur = await this.authFetch(
+        session,
+        `${apiBaseUrl}/api/agents/profile?workflowId=${encodeURIComponent(cleanWfId)}`,
+        { headers }
+      );
+      if (cur.ok) current = (await cur.json().catch(() => ({})))?.profile || {};
+    } catch {}
+
+    const cfg = profile.config;
+    const provider = String(cfg?.provider || current.provider || 'openai');
+    const model = String(cfg?.model || '').trim();
+    if (!model) throw new Error('Seleciona um modelo.');
+
+    // The backend needs a vault credential for the chosen provider
+    const credentialId = await this.resolveCredentialId(session, provider, cfg?.credentialId, current);
+    if (!credentialId) {
+      throw new Error(`Não há nenhuma API de IA "${provider}" configurada no cofre deste workspace. Configura-a no site ou escolhe outro provedor.`);
+    }
+
+    const g = { ...(current.grants || {}), ...(profile.grants || {}) } as Record<string, any>;
+    const body = {
+      workflowId: cleanWfId,
+      // Only the fields the profile API returns/accepts
+      profile: {
+        provider,
+        model,
+        credentialId,
+        systemPrompt: cfg?.systemPrompt ?? current.systemPrompt ?? '',
+        maxModelCalls: cfg?.maxModelCalls ?? current.maxModelCalls ?? 24,
+        maxToolCalls: cfg?.maxToolCalls ?? current.maxToolCalls ?? 32,
+        maxOutputTokens: cfg?.maxOutputTokens ?? current.maxOutputTokens ?? 2048,
+        maxDurationSeconds: cfg?.maxDurationSeconds ?? current.maxDurationSeconds ?? 1800,
+        concurrency: cfg?.concurrency ?? current.concurrency ?? 2,
+        grants: {
+          editGraph: Boolean(g.editGraph),
+          executeCode: Boolean(g.executeCode),
+          webSearch: Boolean(g.webSearch),
+          teams: Boolean(g.teams),
+          externalEffects: Boolean(g.externalEffects),
+          executeNodes: Array.isArray(g.executeNodes) ? g.executeNodes : [],
+          credentialIds: Array.isArray(g.credentialIds) ? g.credentialIds : [],
+          variableNames: Array.isArray(g.variableNames) ? g.variableNames : [],
         },
-      }),
+      },
+    };
+
+    const res = await this.authFetch(session, `${apiBaseUrl}/api/agents/profile`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Falha ao guardar configurações do agente.');
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok || data?.success === false) {
+      // Surface the server's real error (API returns { success:false, error })
+      const msg = data?.error || data?.message || 'Falha ao guardar configurações do agente.';
+      throw new Error(`${msg} (HTTP ${res.status})`);
     }
   }
 
@@ -673,7 +858,8 @@ class RealCellGateway implements CellGateway {
     agentId: string,
     content: string,
     attachments?: FileAttachment[],
-    session?: Session
+    session?: Session,
+    opts?: SendOptions
   ): Promise<AgentMessage> {
     if (!session?.accessToken) {
       throw new Error('Sessão necessária para comunicar com os agentes.');
@@ -685,7 +871,8 @@ class RealCellGateway implements CellGateway {
       id: uid(),
       agentId,
       role: 'user',
-      content,
+      // Hidden interaction payloads are sent to the agent but never shown
+      content: stripUiInstruction(content),
       createdAt: now(),
       status: 'sent',
       attachments: attachments?.map((a) => ({ name: a.name, mimeType: a.mimeType })),
@@ -694,6 +881,7 @@ class RealCellGateway implements CellGateway {
     await this.saveLocalMessage(userMessage);
 
     // Call live backend agent execution API
+    let accepted = false;
     try {
       const filesPayload =
         attachments && attachments.length > 0
@@ -704,7 +892,7 @@ class RealCellGateway implements CellGateway {
             }))
           : undefined;
 
-      const res = await fetch(`${apiBaseUrl}/api/agents/runs`, {
+      const res = await this.authFetch(session, `${apiBaseUrl}/api/agents/runs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -713,19 +901,22 @@ class RealCellGateway implements CellGateway {
         },
         body: JSON.stringify({
           workflowId,
-          message: content,
+          // Smart UI: format instruction travels with the message only (stripped from history)
+          message: withUiInstruction(content),
           idempotencyKey: uid(),
           files: filesPayload,
         }),
       });
 
       if (res.ok) {
+        accepted = true;
+        opts?.onAccepted?.();
         const body = await res.json().catch(() => ({}));
         const runId = body?.run?.id;
 
         if (runId) {
           // Immediately trigger execution drain tick
-          fetch(`${apiBaseUrl}/api/agents/tick`, {
+          this.authFetch(session, `${apiBaseUrl}/api/agents/tick`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -737,10 +928,13 @@ class RealCellGateway implements CellGateway {
 
           // Poll run status for completion
           let answerText: string | null = null;
-          for (let attempt = 0; attempt < 12; attempt++) {
-            await new Promise((r) => setTimeout(r, 1800));
+          let answerUi: AgentMessage['ui'];
+          // Poll with backoff (1.5s -> max 6s) for up to ~90s
+          const deadline = Date.now() + 90_000;
+          for (let attempt = 0; Date.now() < deadline; attempt++) {
+            await new Promise((r) => setTimeout(r, Math.min(1500 * 1.35 ** attempt, 6000)));
 
-            const pollRes = await fetch(`${apiBaseUrl}/api/agents/runs?id=${encodeURIComponent(runId)}`, {
+            const pollRes = await this.authFetch(session, `${apiBaseUrl}/api/agents/runs?id=${encodeURIComponent(runId)}`, {
               headers: {
                 Authorization: `Bearer ${session.accessToken}`,
                 'x-workspace-id': session.workspaceId || 'ws_default',
@@ -752,12 +946,10 @@ class RealCellGateway implements CellGateway {
               const currentRun = pollData?.run;
 
               if (currentRun?.status === 'success') {
-                answerText =
-                  currentRun.answer ||
-                  currentRun.final_output ||
-                  currentRun.output ||
-                  currentRun.summary ||
-                  'Resposta concluída.';
+                const raw = currentRun.answer || currentRun.final_output || currentRun.output || currentRun.summary;
+                const parsed = raw ? parseAgentOutput(raw) : { text: 'Resposta concluída.' };
+                answerText = parsed.text || 'Resposta concluída.';
+                answerUi = parsed.ui;
                 break;
               } else if (currentRun?.status === 'failed') {
                 answerText =
@@ -780,6 +972,7 @@ class RealCellGateway implements CellGateway {
               content: answerText,
               createdAt: now(),
               status: 'sent',
+              ui: answerUi,
             };
             await this.saveLocalMessage(assistantMessage);
           } else {
@@ -800,6 +993,11 @@ class RealCellGateway implements CellGateway {
         throw new Error(errorBody.message || 'Não foi possível contactar o agente neste momento.');
       }
     } catch (e: any) {
+      if (opts?.interaction && !accepted) {
+        // Interaction not delivered: drop the user bubble and let the block offer a retry
+        await this.removeLocalMessage(userMessage.id);
+        throw e instanceof Error ? e : new Error('Não foi possível enviar a resposta.');
+      }
       const errorMessage: AgentMessage = {
         id: uid(),
         agentId,
@@ -826,7 +1024,7 @@ class RealCellGateway implements CellGateway {
     }
 
     try {
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${apiBaseUrl}/api/agents/runs?workflowId=${encodeURIComponent(workflowId)}`,
         {
           headers: {
@@ -848,18 +1046,20 @@ class RealCellGateway implements CellGateway {
                 id: `remote_u_${r.id}`,
                 agentId,
                 role: 'user',
-                content: String(r.message),
+                content: stripUiInstruction(String(r.message)),
                 createdAt: r.createdAt || r.created_at || now(),
                 status: 'sent',
               });
             }
             const out = r.answer || r.final_output || r.output || r.summary || r.last_error;
             if (out) {
+              const parsed = parseAgentOutput(out);
               remoteMessages.push({
                 id: `remote_a_${r.id}`,
                 agentId,
                 role: 'assistant',
-                content: typeof out === 'string' ? out : JSON.stringify(out, null, 2),
+                ui: parsed.ui,
+                content: parsed.text,
                 createdAt: r.updatedAt || r.finished_at || now(),
                 status: 'sent',
               });
@@ -887,7 +1087,7 @@ class RealCellGateway implements CellGateway {
 
     // 1. Try Cloudflare Pages /api/credentials
     try {
-      const res = await fetch(`${apiBaseUrl}/api/credentials`, {
+      const res = await this.authFetch(session, `${apiBaseUrl}/api/credentials`, {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
           'x-workspace-id': session.workspaceId || 'ws_default',
@@ -910,7 +1110,7 @@ class RealCellGateway implements CellGateway {
 
     // 2. Direct Supabase fallback
     try {
-      const sbRes = await fetch(
+      const sbRes = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_credentials?select=id,name,provider,created_at&order=created_at.desc`,
         {
           headers: {
@@ -943,7 +1143,7 @@ class RealCellGateway implements CellGateway {
 
     // 1. Try Cloudflare Pages /api/variables
     try {
-      const res = await fetch(`${apiBaseUrl}/api/variables`, {
+      const res = await this.authFetch(session, `${apiBaseUrl}/api/variables`, {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
           'x-workspace-id': session.workspaceId || 'ws_default',
@@ -966,8 +1166,8 @@ class RealCellGateway implements CellGateway {
 
     // 2. Direct Supabase fallback
     try {
-      const sbRes = await fetch(
-        `${supabaseUrl}/rest/v1/cells_credentials?provider=eq.variable&select=id,name,created_at&order=created_at.desc`,
+      const sbRes = await this.authFetch(session, 
+        `${supabaseUrl}/rest/v1/cells_variables?select=id,key,value,is_secret,created_at&order=created_at.desc`,
         {
           headers: {
             apikey: supabaseAnonKey,
@@ -980,9 +1180,10 @@ class RealCellGateway implements CellGateway {
         if (Array.isArray(sbData) && sbData.length > 0) {
           return sbData.map((v: any) => ({
             id: String(v.id),
-            name: String(v.name),
-            key: String(v.name),
-            maskedValue: '••••••••',
+            name: String(v.key),
+            key: String(v.key),
+            // Never display secret values; RLS already hides secret rows.
+            maskedValue: v.is_secret || v.value == null ? '••••••••' : String(v.value),
             created_at: v.created_at,
           }));
         }
@@ -1064,7 +1265,7 @@ class RealCellGateway implements CellGateway {
 
     // 1. Try Cloudflare Pages /api/jobs
     try {
-      const res = await fetch(`${apiBaseUrl}/api/jobs`, {
+      const res = await this.authFetch(session, `${apiBaseUrl}/api/jobs`, {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
           'x-workspace-id': session.workspaceId || 'ws_default',
@@ -1103,8 +1304,8 @@ class RealCellGateway implements CellGateway {
 
     // 2. Direct Supabase fallback via cells_executions
     try {
-      const sbRes = await fetch(
-        `${supabaseUrl}/rest/v1/cells_executions?select=id,workflow_id,status,trigger_type,created_at,error_message&order=created_at.desc&limit=50`,
+      const sbRes = await this.authFetch(session, 
+        `${supabaseUrl}/rest/v1/cells_executions?select=id,workflow_id,status,trigger_type,started_at,error_message&order=started_at.desc.nullslast&limit=50`,
         {
           headers: {
             apikey: supabaseAnonKey,
@@ -1132,7 +1333,7 @@ class RealCellGateway implements CellGateway {
               title: `Execução ${ex.workflow_id ? ex.workflow_id.slice(0, 14) : 'Manual'}`,
               subtitle: ex.error_message ? `Falha: ${ex.error_message}` : `Estado: ${ex.status}`,
               kind,
-              createdAt: ex.created_at || now(),
+              createdAt: ex.started_at || now(),
               agentId: ex.workflow_id,
             };
           });
