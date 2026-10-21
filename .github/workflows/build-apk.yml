@@ -137,17 +137,17 @@ jobs:
             else
               gh release create v0.2.2 "$APK_FILE" "$SHA_FILE" \
                 --title "CELL AGENT Mobile v0.2.2" \
-                --notes "### CELL AGENT Mobile v0.2.2 - Correção Definitiva de Instalação APK
+                --notes "### CELL AGENT Mobile v0.2.2 - Correcao Definitiva de Instalacao APK
 
-Correção comprovada de empacotamento, assinatura e compatibilidade Android:
+Correcao comprovada de empacotamento, assinatura e compatibilidade Android:
 - Assinatura release v1 (JAR signing) e v2 (APK Signature Scheme) ativadas e validadas.
-- Correção do script de injeção Gradle para mapear de forma robusta o bloco release.
-- Remoção de fallback silencioso para debug e validação estrita no CI (zipalign 4-byte e apksigner).
-- VersionCode explícito (5) e incremento de versão (0.2.2).
+- Correcao do script de injecao Gradle para mapear de forma robusta o bloco release.
+- Remocao de fallback silencioso para debug e validacao estrita no CI (zipalign 4-byte e apksigner).
+- VersionCode explicito (5) e incremento de versao (0.2.2).
 - Todas as funcionalidades e design preservados:
-  * Menu de Ações flutuante suspenso com cantos arredondados (Criar missão, Câmara, Imagem ou vídeo, Ficheiros, Capture e Plugins).
-  * Animação elegante do botão '+' rodando 45 graus para 'x'.
-  * Opção de copiar mensagem ao tocar na mensagem do utilizador.
-  * Cartão 'Avançado' no fim do Perfil abrindo modal dedicada com Cofre, Segurança e Endpoints."
+  - Menu de Acoes flutuante suspenso com cantos arredondados (Criar missao, Camara, Imagem ou video, Ficheiros, Capture e Plugins).
+  - Animacao elegante do botao '+' rodando 45 graus para 'x'.
+  - Opcao de copiar mensagem ao tocar na mensagem do utilizador.
+  - Cartao 'Avancado' no fim do Perfil abrindo modal dedicada com Cofre, Seguranca e Endpoints."
             fi
           fi
