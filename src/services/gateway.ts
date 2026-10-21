@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { forgetSession, saveSession } from './session';
+import { modelsFor } from './models';
 import { parseAgentOutput, stripUiInstruction, withUiInstruction } from './smartui';
 import type {
   ActivityItem,
@@ -12,6 +13,7 @@ import type {
   CredentialVaultItem,
   FileAttachment,
   GlobalVariableItem,
+  ModelCatalog,
   SendOptions,
   Session,
   WorkspaceInfo,
@@ -715,6 +717,68 @@ class RealCellGateway implements CellGateway {
     };
   }
 
+  /**
+   * Credential the profile save uses for a provider: explicit one, else the current profile's
+   * (if same provider), else the first vault credential of that provider.
+   */
+  private async resolveCredentialId(
+    session: Session,
+    provider: string,
+    explicit?: string,
+    current?: { provider?: string; credentialId?: string }
+  ): Promise<string> {
+    if (explicit) return explicit;
+    if (current?.credentialId && current.provider === provider) return current.credentialId;
+    const creds = await this.getCredentials(session).catch(() => [] as CredentialVaultItem[]);
+    return creds.find((c) => c.provider.toLowerCase() === provider.toLowerCase())?.id || '';
+  }
+
+  private modelCache = new Map<string, ModelCatalog>();
+
+  /** Live models for the provider's vault key (backend lists them; the app never sees the key). */
+  async getModelCatalog(provider: string, session?: Session): Promise<ModelCatalog> {
+    const fixed = (note: string): ModelCatalog => ({ source: 'fixed', models: modelsFor(provider), note });
+    if (!session?.accessToken) return fixed('Sem sessão: a mostrar a lista padrão.');
+    const credentialId = await this.resolveCredentialId(session, provider);
+    if (!credentialId) return fixed('Sem API deste provedor no cofre: lista padrão.');
+
+    const cacheKey = `${session.workspaceId}:${credentialId}:${provider}`;
+    const cached = this.modelCache.get(cacheKey);
+    if (cached) return cached;
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    try {
+      const res = await this.authFetch(
+        session,
+        `${apiBaseUrl}/api/credentials/models?id=${encodeURIComponent(credentialId)}&provider=${encodeURIComponent(provider)}&operation=chat`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            'x-workspace-id': session.workspaceId || 'ws_default',
+          },
+          signal: ctrl.signal,
+        }
+      );
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || data?.success === false) {
+        return fixed(`Catálogo indisponível (${data?.error || `HTTP ${res.status}`}): lista padrão.`);
+      }
+      const models = (Array.isArray(data?.models) ? data.models : [])
+        .filter((m: any) => m && typeof m.id === 'string' && m.id.trim())
+        .slice(0, 300)
+        .map((m: any) => ({ id: String(m.id), label: String(m.name || m.id) }));
+      if (!models.length) return fixed('A API não devolveu modelos: lista padrão.');
+      const catalog: ModelCatalog = { source: 'live', models, note: data?.warning ? String(data.warning) : undefined };
+      this.modelCache.set(cacheKey, catalog);
+      return catalog;
+    } catch (e: any) {
+      return fixed(e?.name === 'AbortError' ? 'O catálogo demorou demasiado: lista padrão.' : 'Sem ligação ao catálogo: lista padrão.');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async saveAgentProfile(
     workflowId: string,
     profile: Partial<AgentProfile>,
@@ -744,12 +808,7 @@ class RealCellGateway implements CellGateway {
     if (!model) throw new Error('Seleciona um modelo.');
 
     // The backend needs a vault credential for the chosen provider
-    let credentialId: string = cfg?.credentialId || '';
-    if (!credentialId && current.provider === provider) credentialId = current.credentialId || '';
-    if (!credentialId) {
-      const creds = await this.getCredentials(session).catch(() => [] as CredentialVaultItem[]);
-      credentialId = creds.find((c) => c.provider.toLowerCase() === provider.toLowerCase())?.id || '';
-    }
+    const credentialId = await this.resolveCredentialId(session, provider, cfg?.credentialId, current);
     if (!credentialId) {
       throw new Error(`Não há nenhuma API de IA "${provider}" configurada no cofre deste workspace. Configura-a no site ou escolhe outro provedor.`);
     }

@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Modal, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Modal, Pressable, TextInput, View } from 'react-native';
 import { Icon, Pill, RoundButton, Txt } from './UI';
 import { C } from '../theme';
-import { isKnownModel, modelsFor } from '../services/models';
+import { modelsFor } from '../services/models';
+import type { ModelCatalog } from '../types';
 
 const field = {
   backgroundColor: C.surface,
@@ -20,25 +21,48 @@ export function ModelPicker({
   provider,
   value,
   onChange,
+  loadModels,
 }: {
   provider: string;
   value: string;
   onChange: (model: string) => void;
+  /** Live catalog loader (backend, per vault key). Falls back to the fixed list. */
+  loadModels?: (provider: string) => Promise<ModelCatalog>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [customMode, setCustomMode] = useState(false);
   const [custom, setCustom] = useState('');
-  const models = modelsFor(provider);
-  const known = models.find((m) => m.id === value);
-  const isCustom = !!value && !isKnownModel(provider, value);
+  const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
+  const [loading, setLoading] = useState(false);
+  const live = catalog?.source === 'live' && catalog.models.length > 0;
+  const models = live ? catalog!.models : modelsFor(provider);
+  const fixedKnown = modelsFor(provider).find((m) => m.id === value);
+  const known = models.find((m) => m.id === value) || fixedKnown;
+  // Saved ID that isn't in the list being shown (live or fixed)
+  const notListed = !!value && !models.some((m) => m.id === value);
+  const isCustom = !!value && !known;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return q ? models.filter((m) => m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q)) : models;
   }, [models, query]);
 
+  const fetchCatalog = () => {
+    if (!loadModels) return;
+    setLoading(true);
+    loadModels(provider)
+      .then((c) => setCatalog(c))
+      .catch(() => setCatalog({ source: 'fixed', models: modelsFor(provider), note: 'Sem ligação ao catálogo: lista padrão.' }))
+      .finally(() => setLoading(false));
+  };
+  // Provider changed: drop the old catalog
+  React.useEffect(() => {
+    setCatalog(null);
+  }, [provider]);
+
   const show = () => {
+    if (!catalog || catalog.source !== 'live') fetchCatalog();
     setQuery('');
     setCustomMode(isCustom);
     setCustom(isCustom ? value : '');
@@ -100,12 +124,41 @@ export function ModelPicker({
             />
           )}
 
+          {loading ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+              <ActivityIndicator size="small" color={C.ink} />
+              <Txt size={11} color={C.muted}>A carregar modelos da tua API…</Txt>
+            </View>
+          ) : live ? (
+            <Txt size={11} color={C.success} style={{ marginBottom: 8 }}>
+              {`Disponíveis para a tua API · ${models.length} modelos`}
+            </Txt>
+          ) : catalog?.note ? (
+            <Txt size={11} color={C.muted} style={{ marginBottom: 8 }}>{catalog.note}</Txt>
+          ) : null}
+
+          {notListed && !loading && (
+            <Pressable
+              onPress={() => pick(value)}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 9, paddingVertical: 9, paddingHorizontal: 11, borderRadius: 14, backgroundColor: C.surface2, marginBottom: 4 }}
+            >
+              <View style={{ flex: 1 }}>
+                <Txt size={13} weight="700" numberOfLines={1}>{value}</Txt>
+                <Txt size={10} color={C.error}>
+                  {live ? 'Guardado · não aparece no catálogo da tua API' : 'Guardado · personalizado'}
+                </Txt>
+              </View>
+              <Icon name="checkmark" size={18} />
+            </Pressable>
+          )}
+
           <FlatList
-            data={filtered}
+            data={loading ? [] : filtered}
             keyExtractor={(m) => m.id}
             keyboardShouldPersistTaps="handled"
             style={{ flexGrow: 0 }}
             ListEmptyComponent={
+              loading ? null :
               <Txt size={12} color={C.muted} style={{ paddingVertical: 9 }}>
                 Nenhum modelo encontrado.
               </Txt>
@@ -127,8 +180,8 @@ export function ModelPicker({
                 >
                   <View style={{ flex: 1 }}>
                     <Txt size={13} weight={selected ? '700' : '500'}>{item.label}</Txt>
-                    <Txt size={10} color={C.muted}>
-                      {item.note ? `${item.id} · ${item.note}` : item.id}
+                    <Txt size={10} color={C.muted} numberOfLines={1}>
+                      {item.note ? `${item.id} · ${item.note}` : live ? `${item.id} · disponível` : item.id}
                     </Txt>
                   </View>
                   {selected && <Icon name="checkmark" size={18} />}

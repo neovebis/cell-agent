@@ -21,10 +21,11 @@ import { SmartUiView } from '../components/blocks/SmartBlocks';
 import { buildInteractionMessage } from '../services/smartui';
 import { loadUiAnswers, saveUiAnswer } from '../services/uiAnswers';
 import { ModelPicker } from '../components/ModelPicker';
-import { defaultModelFor, isKnownModel } from '../services/models';
+import { defaultModelFor, isKnownModel, preferredModel } from '../services/models';
 import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
 import { C, R } from '../theme';
 import type {
+  ModelCatalog,
   SendOptions,
   UiAnswer,
   Agent,
@@ -46,6 +47,7 @@ type Props = {
   onBack: () => void;
   onNew: (name: string, description: string) => void;
   onSend: (content: string, attachment?: FileAttachment, opts?: SendOptions) => Promise<void>;
+  loadModels?: (provider: string) => Promise<ModelCatalog>;
   onRefresh: () => void;
   onError: (message: string) => void;
   onClearHistory?: (agentId: string) => Promise<void>;
@@ -1142,7 +1144,13 @@ export function ChatScreen(props: Props) {
                           if (p === provider) return;
                           setProvider(p);
                           // Model IDs are provider-specific: reset to that provider's default
-                          if (!isKnownModel(p, model)) setModel(defaultModelFor(p));
+                          const fallback = defaultModelFor(p);
+                          if (!isKnownModel(p, model)) setModel(fallback);
+                          // Prefer a model the user's key actually has (live catalog)
+                          props.loadModels?.(p).then((cat) => {
+                            if (cat.source !== 'live' || !cat.models.length) return;
+                            setModel((m) => (m === fallback && !cat.models.some((x) => x.id === m) ? preferredModel(p, cat.models) : m));
+                          }).catch(() => {});
                         }}
                         style={{ marginRight: 7, minHeight: 35 }}
                       >
@@ -1157,7 +1165,7 @@ export function ChatScreen(props: Props) {
                   <Txt size={11} weight="700" color={C.muted} style={{ marginBottom: 7 }}>
                     MODELO
                   </Txt>
-                  <ModelPicker provider={provider} value={model} onChange={setModel} />
+                  <ModelPicker provider={provider} value={model} onChange={setModel} loadModels={props.loadModels} />
                 </View>
 
                 {/* System Prompt Input */}

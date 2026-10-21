@@ -76,6 +76,14 @@ export interface UiFormField {
   required?: boolean;
   placeholder?: string;
 }
+export interface ModelCatalog {
+  /** 'live' = from the user's vault key via the backend; 'fixed' = curated fallback list. */
+  source: 'live' | 'fixed';
+  models: { id: string; label: string; note?: string }[];
+  /** Short pt-PT note explaining a fallback. */
+  note?: string;
+}
+
 export interface SendOptions {
   /** Called as soon as the backend accepts the run (POST succeeded). */
   onAccepted?: () => void;
@@ -209,6 +217,7 @@ export interface CellGateway {
     opts?: SendOptions
   ): Promise<AgentMessage>;
   clearMessages(agentId: string): Promise<void>;
+  getModelCatalog?(provider: string, session?: Session): Promise<ModelCatalog>;
   getCaptures(session?: Session): Promise<CaptureItem[]>;
   saveCapture(
     item: Omit<CaptureItem, 'id' | 'createdAt' | 'synced'>,

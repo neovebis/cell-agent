@@ -435,6 +435,11 @@ function Root() {
     <View style={{ flex: 1, backgroundColor: C.white }}>
       {tab === 'Chat' && (
         <ChatScreen
+          loadModels={(p) =>
+            gateway.getModelCatalog
+              ? gateway.getModelCatalog(p, session ?? undefined)
+              : Promise.resolve({ source: 'fixed' as const, models: [] })
+          }
           agents={agents}
           activeAgent={activeAgent}
           messages={messages}

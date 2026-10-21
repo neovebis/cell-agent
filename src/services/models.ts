@@ -61,3 +61,9 @@ export const defaultModelFor = (provider: string): string => modelsFor(provider)
 
 export const isKnownModel = (provider: string, model: string): boolean =>
   modelsFor(provider).some((m) => m.id === model);
+
+/** Preferred default from a live list: first curated model the key has, else the first live one. */
+export function preferredModel(provider: string, live: { id: string }[]): string {
+  const ids = new Set(live.map((m) => m.id));
+  return modelsFor(provider).find((m) => ids.has(m.id))?.id || live[0]?.id || defaultModelFor(provider);
+}
