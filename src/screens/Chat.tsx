@@ -18,6 +18,8 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { SmartUiView } from '../components/blocks/SmartBlocks';
+import { ModelPicker } from '../components/ModelPicker';
+import { defaultModelFor, isKnownModel } from '../services/models';
 import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
 import { C, R } from '../theme';
 import type {
@@ -1100,7 +1102,12 @@ export function ChatScreen(props: Props) {
                       <Pill
                         key={p}
                         selected={provider === p}
-                        onPress={() => setProvider(p)}
+                        onPress={() => {
+                          if (p === provider) return;
+                          setProvider(p);
+                          // Model IDs are provider-specific: reset to that provider's default
+                          if (!isKnownModel(p, model)) setModel(defaultModelFor(p));
+                        }}
                         style={{ marginRight: 7, minHeight: 35 }}
                       >
                         {p.toUpperCase()}
@@ -1112,15 +1119,9 @@ export function ChatScreen(props: Props) {
                 {/* Model ID Input */}
                 <View>
                   <Txt size={11} weight="700" color={C.muted} style={{ marginBottom: 7 }}>
-                    ID DO MODELO
+                    MODELO
                   </Txt>
-                  <TextInput
-                    value={model}
-                    onChangeText={setModel}
-                    placeholder="ex.: gemini-1.5-pro, gpt-4o, claude-3-5-sonnet"
-                    style={styles.field}
-                    placeholderTextColor={C.faint}
-                  />
+                  <ModelPicker provider={provider} value={model} onChange={setModel} />
                 </View>
 
                 {/* System Prompt Input */}
