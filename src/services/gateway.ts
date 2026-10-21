@@ -347,7 +347,11 @@ class RealCellGateway implements CellGateway {
 
           const extractedAgents: Agent[] = [];
 
-          for (const w of rows) {
+          // Only show workflows from the currently selected workspace
+          const activeWsId = session.workspaceId && session.workspaceId !== 'ws_default' ? session.workspaceId : null;
+          const scopedRows = activeWsId ? rows.filter((w: any) => w.workspace_id === activeWsId) : rows;
+
+          for (const w of scopedRows) {
             const rawNodes = Array.isArray(w.graph?.nodes) ? w.graph.nodes : [];
             const agentNodes = rawNodes.filter(
               (n: any) =>

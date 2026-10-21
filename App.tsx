@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -116,10 +116,13 @@ function Root() {
   const [busy, setBusy] = useState(false);
 
   const notify = (msg: string) => Alert.alert('CELL AGENT', msg);
+  // Bumped on every workspace switch so in-flight refreshes for the old workspace are discarded
+  const workspaceEpoch = useRef(0);
 
   const refresh = useCallback(async (currentSession: Session | null) => {
     if (!gateway.demo && !currentSession) return;
     const auth = currentSession ?? undefined;
+    const epoch = workspaceEpoch.current;
 
     const results = await Promise.allSettled([
       gateway.getAgents(auth),
@@ -130,6 +133,9 @@ function Root() {
       gateway.getCredentials(auth),
       gateway.getVariables(auth),
     ]);
+
+    // Ignore stale results if the workspace changed while this refresh was in flight
+    if (epoch !== workspaceEpoch.current) return;
 
     if (results[0].status === 'fulfilled') {
       setAgents(results[0].value);
@@ -214,6 +220,14 @@ function Root() {
     });
     return () => back.remove();
   }, [tab, activeAgent]);
+
+  useEffect(() => {
+    const wsId = session?.workspaceId;
+    if (activeAgent && wsId && activeAgent.workspaceId && activeAgent.workspaceId !== wsId) {
+      setActiveAgent(null);
+      setMessages([]);
+    }
+  }, [session?.workspaceId, activeAgent]);
 
   const openAgent = (agent: Agent) => {
     setActiveAgent(agent);
@@ -345,6 +359,8 @@ function Root() {
   const switchWorkspace = async (workspaceId: string) => {
     if (!session) return;
     const updated: Session = { ...session, workspaceId };
+    workspaceEpoch.current += 1;
+    setAgents([]);
     await saveSession(updated);
     setSession(updated);
     setActiveAgent(null);
