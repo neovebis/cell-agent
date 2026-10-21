@@ -11,4 +11,4 @@ export const C = {
   success: '#27754F',
 };
 export const R = { card: 28, pill: 999, sheet: 32, composer: 30 };
-export const TAB_HEIGHT = 80;
+export const TAB_HEIGHT = 70;

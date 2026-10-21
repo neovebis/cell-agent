@@ -156,7 +156,7 @@ export function CaptureScreen({
 
   return (
     <View style={{ flex: 1, backgroundColor: C.white }}>
-      <ScrollView contentContainerStyle={{ padding: 24, paddingTop: 36, paddingBottom: 135 }}>
+      <ScrollView contentContainerStyle={{ padding: 21, paddingTop: 32, paddingBottom: 119 }}>
         <PageTitle kicker="O mundo físico entra aqui" title="Capture" />
 
         {/* Capture Trigger Card */}
@@ -166,12 +166,12 @@ export function CaptureScreen({
           style={styles.captureCard}
         >
           <View style={styles.cameraCircle}>
-            <Icon name="camera-outline" size={40} color={C.white} />
+            <Icon name="camera-outline" size={35} color={C.white} />
           </View>
-          <Txt weight="700" size={29} style={{ marginTop: 28 }}>
+          <Txt weight="700" size={26} style={{ marginTop: 25 }}>
             Capturar
           </Txt>
-          <Txt color={C.muted} size={16} style={{ marginTop: 8 }}>
+          <Txt color={C.muted} size={14} style={{ marginTop: 7 }}>
             Foto, Documento, Galeria ou Texto
           </Txt>
         </Pressable>
@@ -179,26 +179,26 @@ export function CaptureScreen({
         <Txt
           weight="700"
           color={C.muted}
-          size={13}
-          style={{ marginTop: 29, marginBottom: 19, letterSpacing: 0.5 }}
+          size={11}
+          style={{ marginTop: 26, marginBottom: 17, letterSpacing: 0.5 }}
         >
           RECENTES NA BIBLIOTECA
         </Txt>
 
         {items.length === 0 ? (
-          <Card style={{ gap: 6 }}>
-            <Txt weight="600" size={16}>
+          <Card style={{ gap: 5 }}>
+            <Txt weight="600" size={14}>
               Nenhum conteúdo capturado ainda
             </Txt>
-            <Txt color={C.muted} size={13}>
+            <Txt color={C.muted} size={11}>
               Toca no cartão Capturar acima para recolher fotos, documentos ou apontamentos. Podes
               enviá-los diretamente para os teus agentes.
             </Txt>
           </Card>
         ) : (
           items.map((item) => (
-            <Pressable key={item.id} onPress={() => setSelected(item)} style={{ marginBottom: 10 }}>
-              <Card style={{ padding: 18, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Pressable key={item.id} onPress={() => setSelected(item)} style={{ marginBottom: 9 }}>
+              <Card style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 11 }}>
                 <View style={styles.itemIconCircle}>
                   <Icon
                     name={
@@ -210,19 +210,19 @@ export function CaptureScreen({
                         ? 'document-text-outline'
                         : 'text-outline'
                     }
-                    size={22}
+                    size={19}
                   />
                 </View>
-                <View style={{ flex: 1, gap: 5 }}>
-                  <Txt weight="600" size={16} numberOfLines={1}>
+                <View style={{ flex: 1, gap: 4 }}>
+                  <Txt weight="600" size={14} numberOfLines={1}>
                     {item.title}
                   </Txt>
-                  <Txt color={C.muted} size={12}>
+                  <Txt color={C.muted} size={11}>
                     {item.source} · {new Date(item.createdAt).toLocaleDateString('pt-PT')}
                   </Txt>
                 </View>
                 <View style={styles.source}>
-                  <Txt size={11} weight="600" color={C.muted}>
+                  <Txt size={10} weight="600" color={C.muted}>
                     {item.type.toUpperCase()}
                   </Txt>
                 </View>
@@ -243,7 +243,7 @@ export function CaptureScreen({
           <Pressable style={{ flex: 1 }} onPress={() => setCaptureOpen(false)} />
           <View style={styles.sheet}>
             <View style={styles.sheetGrab} />
-            <Txt size={18} weight="700">
+            <Txt size={16} weight="700">
               Nova Captura
             </Txt>
             <TextInput
@@ -262,15 +262,15 @@ export function CaptureScreen({
                   style={styles.option}
                   onPress={() => choose(label)}
                 >
-                  <Icon name={icon} size={19} />
-                  <Txt size={15} weight="600">
+                  <Icon name={icon} size={17} />
+                  <Txt size={13} weight="600">
                     {label}
                   </Txt>
                 </Pressable>
               ))}
             </View>
             {saving && (
-              <View style={{ alignItems: 'center', padding: 8 }}>
+              <View style={{ alignItems: 'center', padding: 7 }}>
                 <ActivityIndicator color={C.ink} />
               </View>
             )}
@@ -285,9 +285,9 @@ export function CaptureScreen({
         presentationStyle="pageSheet"
         onRequestClose={() => setTextOpen(false)}
       >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 25, paddingTop: 45 }}>
+        <View style={{ flex: 1, backgroundColor: C.white, padding: 22, paddingTop: 40 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Txt weight="700" size={27}>
+            <Txt weight="700" size={24}>
               Capturar texto
             </Txt>
             <RoundButton icon="close" label="Fechar" onPress={() => setTextOpen(false)} />
@@ -297,7 +297,7 @@ export function CaptureScreen({
             value={textValue}
             onChangeText={setTextValue}
             placeholder="Escreve uma nota, instrução ou apontamento para o agente..."
-            style={[styles.noteInput, { marginTop: 28, flex: 1, textAlignVertical: 'top', borderRadius: 25 }]}
+            style={[styles.noteInput, { marginTop: 25, flex: 1, textAlignVertical: 'top', borderRadius: 25 }]}
             placeholderTextColor={C.muted}
           />
           <Pressable
@@ -333,8 +333,8 @@ export function CaptureScreen({
         <View style={styles.backdrop}>
           <Pressable style={{ flex: 1 }} onPress={() => setSelected(null)} />
           <View style={styles.sheet}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Txt size={20} weight="700" numberOfLines={1} style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 11 }}>
+              <Txt size={18} weight="700" numberOfLines={1} style={{ flex: 1 }}>
                 {selected?.title}
               </Txt>
               <RoundButton icon="close" label="Fechar" onPress={() => setSelected(null)} />
@@ -344,21 +344,21 @@ export function CaptureScreen({
               <Image
                 resizeMode="contain"
                 source={{ uri: selected.uri }}
-                style={{ width: '100%', height: 240, borderRadius: 20, backgroundColor: C.surface2 }}
+                style={{ width: '100%', height: 211, borderRadius: 20, backgroundColor: C.surface2 }}
               />
             ) : selected?.type === 'text' ? (
-              <Card style={{ maxHeight: 200 }}>
+              <Card style={{ maxHeight: 176 }}>
                 <ScrollView>
-                  <Txt size={15} style={{ lineHeight: 22 }}>
+                  <Txt size={13} style={{ lineHeight: 19 }}>
                     {selected.note}
                   </Txt>
                 </ScrollView>
               </Card>
             ) : (
-              <Card style={{ gap: 6 }}>
+              <Card style={{ gap: 5 }}>
                 <Txt color={C.muted}>Tipo: {selected?.type}</Txt>
                 <Txt color={C.muted}>Origem: {selected?.source}</Txt>
-                {!!selected?.note && <Txt size={14}>{selected.note}</Txt>}
+                {!!selected?.note && <Txt size={12}>{selected.note}</Txt>}
               </Card>
             )}
 
@@ -367,8 +367,8 @@ export function CaptureScreen({
               onPress={() => setAgentPickerOpen(true)}
               style={styles.sendAgentButton}
             >
-              <Icon name="paper-plane-outline" color={C.white} size={20} />
-              <Txt color={C.white} weight="700" size={16}>
+              <Icon name="paper-plane-outline" color={C.white} size={18} />
+              <Txt color={C.white} weight="700" size={14}>
                 Enviar para o Agente
               </Txt>
             </Pressable>
@@ -383,20 +383,20 @@ export function CaptureScreen({
         presentationStyle="pageSheet"
         onRequestClose={() => setAgentPickerOpen(false)}
       >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 24, paddingTop: 40 }}>
+        <View style={{ flex: 1, backgroundColor: C.white, padding: 21, paddingTop: 35 }}>
           <View
             style={{
               flexDirection: 'row',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: 20,
+              marginBottom: 18,
             }}
           >
             <View>
-              <Txt size={24} weight="700">
+              <Txt size={21} weight="700">
                 Escolher Agente
               </Txt>
-              <Txt size={13} color={C.muted}>
+              <Txt size={11} color={C.muted}>
                 Enviar este anexo para execução
               </Txt>
             </View>
@@ -414,19 +414,19 @@ export function CaptureScreen({
                     onSendToAgent(selected, ag);
                   }
                 }}
-                style={{ marginBottom: 12 }}
+                style={{ marginBottom: 11 }}
               >
-                <Card style={{ padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                  <AgentAvatar size={44} />
+                <Card style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <AgentAvatar size={39} />
                   <View style={{ flex: 1, gap: 4 }}>
-                    <Txt weight="700" size={17}>
+                    <Txt weight="700" size={15}>
                       {ag.name}
                     </Txt>
-                    <Txt color={C.muted} size={12} numberOfLines={1}>
+                    <Txt color={C.muted} size={11} numberOfLines={1}>
                       {ag.description}
                     </Txt>
                   </View>
-                  <Icon name="arrow-forward" color={C.ink} size={20} />
+                  <Icon name="arrow-forward" color={C.ink} size={18} />
                 </Card>
               </Pressable>
             ))}
@@ -447,7 +447,7 @@ export function CaptureScreen({
 
 const styles = StyleSheet.create({
   captureCard: {
-    height: 310,
+    height: 273,
     borderRadius: R.card,
     backgroundColor: C.surface,
     borderWidth: 1,
@@ -456,16 +456,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cameraCircle: {
-    width: 96,
-    height: 96,
+    width: 84,
+    height: 84,
     borderRadius: 100,
     backgroundColor: C.ink,
     justifyContent: 'center',
     alignItems: 'center',
   },
   itemIconCircle: {
-    width: 44,
-    height: 44,
+    width: 39,
+    height: 39,
     borderRadius: 22,
     backgroundColor: C.surface2,
     alignItems: 'center',
@@ -475,40 +475,40 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     borderWidth: 1,
     borderColor: C.border,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
   },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.39)', justifyContent: 'flex-end' },
   sheet: {
     borderTopLeftRadius: 34,
     borderTopRightRadius: 34,
     backgroundColor: C.surface,
-    paddingHorizontal: 23,
-    paddingTop: 12,
-    paddingBottom: 34,
-    gap: 16,
+    paddingHorizontal: 20,
+    paddingTop: 11,
+    paddingBottom: 30,
+    gap: 14,
   },
   sheetGrab: {
-    width: 44,
-    height: 5,
+    width: 39,
+    height: 4,
     backgroundColor: C.border,
     borderRadius: 5,
     alignSelf: 'center',
     marginBottom: 4,
   },
   noteInput: {
-    minHeight: 80,
+    minHeight: 70,
     borderRadius: 24,
     backgroundColor: C.white,
     borderWidth: 1,
     borderColor: C.border,
-    fontSize: 16,
-    padding: 16,
+    fontSize: 14,
+    padding: 14,
     color: C.ink,
   },
-  optionGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 10, rowGap: 10 },
+  optionGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 9, rowGap: 9 },
   option: {
-    height: 54,
+    height: 48,
     borderRadius: R.pill,
     borderWidth: 1,
     borderColor: C.border,
@@ -517,25 +517,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 7,
     backgroundColor: C.white,
   },
   saveButton: {
-    height: 56,
+    height: 49,
     backgroundColor: C.ink,
     borderRadius: R.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 15,
+    marginBottom: 13,
   },
   sendAgentButton: {
-    height: 54,
+    height: 48,
     backgroundColor: C.ink,
     borderRadius: R.pill,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    marginTop: 8,
+    gap: 9,
+    marginTop: 7,
   },
 });
