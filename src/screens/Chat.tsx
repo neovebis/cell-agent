@@ -17,6 +17,9 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AgentAvatar } from '../components/AgentAvatar';
+import { SmartUiView } from '../components/blocks/SmartBlocks';
+import { ModelPicker } from '../components/ModelPicker';
+import { defaultModelFor, isKnownModel } from '../services/models';
 import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
 import { C, R } from '../theme';
 import type {
@@ -94,10 +97,10 @@ function ThinkingBubble({ agentName }: { agentName: string }) {
   }, [dot1, dot2, dot3]);
 
   return (
-    <View style={{ alignItems: 'flex-start', marginTop: 4, marginBottom: 14 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 7, paddingLeft: 4 }}>
-        <AgentAvatar size={20} />
-        <Txt size={12} weight="600" color={C.muted}>
+    <View style={{ alignItems: 'flex-start', marginTop: 4, marginBottom: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6, paddingLeft: 4 }}>
+        <AgentAvatar size={18} />
+        <Txt size={11} weight="600" color={C.muted}>
           {agentName}
         </Txt>
       </View>
@@ -106,17 +109,17 @@ function ThinkingBubble({ agentName }: { agentName: string }) {
           backgroundColor: '#F3F4F6',
           borderRadius: 20,
           borderBottomLeftRadius: 5,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
+          paddingHorizontal: 14,
+          paddingVertical: 12,
           flexDirection: 'row',
           alignItems: 'center',
-          gap: 6,
+          gap: 5,
         }}
       >
         <Animated.View
           style={{
-            width: 7,
-            height: 7,
+            width: 6,
+            height: 6,
             borderRadius: 3.5,
             backgroundColor: '#111827',
             opacity: dot1,
@@ -132,8 +135,8 @@ function ThinkingBubble({ agentName }: { agentName: string }) {
         />
         <Animated.View
           style={{
-            width: 7,
-            height: 7,
+            width: 6,
+            height: 6,
             borderRadius: 3.5,
             backgroundColor: '#111827',
             opacity: dot2,
@@ -149,8 +152,8 @@ function ThinkingBubble({ agentName }: { agentName: string }) {
         />
         <Animated.View
           style={{
-            width: 7,
-            height: 7,
+            width: 6,
+            height: 6,
             borderRadius: 3.5,
             backgroundColor: '#111827',
             opacity: dot3,
@@ -229,15 +232,15 @@ function MessageBubble({
     <Animated.View
       style={{
         alignItems: isUser ? 'flex-end' : 'flex-start',
-        marginBottom: 16,
+        marginBottom: 14,
         opacity: fadeAnim,
         transform: [{ translateY: slideAnim }],
       }}
     >
       {!isUser && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 7, paddingLeft: 4 }}>
-          <AgentAvatar size={20} />
-          <Txt size={12} weight="600" color={C.muted}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6, paddingLeft: 4 }}>
+          <AgentAvatar size={18} />
+          <Txt size={11} weight="600" color={C.muted}>
             {agentName}
           </Txt>
         </View>
@@ -249,10 +252,10 @@ function MessageBubble({
           <Pressable onPress={handleCopyMessage} style={styles.copyPill}>
             <Icon
               name={copied ? 'checkmark-circle' : 'copy-outline'}
-              size={14}
+              size={12}
               color={C.white}
             />
-            <Txt size={12} weight="600" color={C.white}>
+            <Txt size={11} weight="600" color={C.white}>
               {copied ? 'Copiado!' : 'Copiar'}
             </Txt>
           </Pressable>
@@ -271,35 +274,37 @@ function MessageBubble({
         ]}
       >
         <Txt
-          size={15}
+          size={13}
           color={isUser ? C.white : '#111827'}
-          style={{ lineHeight: 22 }}
+          style={{ lineHeight: 19 }}
         >
           {item.content}
         </Txt>
 
+        {!isUser && item.ui && item.ui.blocks.length > 0 && <SmartUiView ui={item.ui} />}
+
         {item.attachments && item.attachments.length > 0 && (
-          <View style={{ marginTop: 8, gap: 4 }}>
+          <View style={{ marginTop: 7, gap: 4 }}>
             {item.attachments.map((att, i) => (
               <View
                 key={i}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  gap: 6,
+                  gap: 5,
                   backgroundColor: isUser ? 'rgba(255,255,255,0.18)' : C.white,
                   borderRadius: 12,
-                  paddingHorizontal: 9,
-                  paddingVertical: 5,
+                  paddingHorizontal: 8,
+                  paddingVertical: 4,
                 }}
               >
                 <Icon
                   name="document-attach-outline"
-                  size={14}
+                  size={12}
                   color={isUser ? C.white : C.muted}
                 />
                 <Txt
-                  size={12}
+                  size={11}
                   weight="600"
                   color={isUser ? C.white : C.ink}
                   numberOfLines={1}
@@ -321,12 +326,12 @@ function MessageBubble({
           }}
         >
           {item.status === 'failed' ? (
-            <Txt color="#EF4444" size={11} weight="600">
+            <Txt color="#EF4444" size={10} weight="600">
               Não entregue
             </Txt>
           ) : (
             <Txt
-              size={10}
+              size={9}
               color={isUser ? 'rgba(255,255,255,0.55)' : '#9CA3AF'}
             >
               {formatTime(item.createdAt)}
@@ -612,7 +617,7 @@ export function ChatScreen(props: Props) {
       <View style={{ flex: 1, backgroundColor: C.white }}>
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 24, paddingTop: 36, paddingBottom: 126 }}
+          contentContainerStyle={{ padding: 21, paddingTop: 32, paddingBottom: 111 }}
         >
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <PageTitle kicker="Espaço de Trabalho Ativo" title="Agentes" />
@@ -620,11 +625,11 @@ export function ChatScreen(props: Props) {
               icon="add"
               label="Criar novo agente"
               onPress={() => setCreationOpen(true)}
-              size={52}
+              size={46}
             />
           </View>
 
-          <View style={{ gap: 12 }}>
+          <View style={{ gap: 11 }}>
             {props.agents.map((agent) => (
               <Pressable
                 key={agent.id}
@@ -632,26 +637,26 @@ export function ChatScreen(props: Props) {
                 accessibilityLabel={`Abrir chat de ${agent.name}`}
               >
                 <Card style={styles.agentCard}>
-                  <AgentAvatar size={53} />
-                  <View style={{ flex: 1, marginLeft: 15, gap: 5 }}>
-                    <Txt weight="700" size={19}>
+                  <AgentAvatar size={47} />
+                  <View style={{ flex: 1, marginLeft: 13, gap: 4 }}>
+                    <Txt weight="700" size={17}>
                       {agent.name}
                     </Txt>
-                    <Txt color={C.muted} size={13} numberOfLines={1}>
+                    <Txt color={C.muted} size={11} numberOfLines={1}>
                       {agent.description}
                     </Txt>
                   </View>
-                  <Icon name="chevron-forward" color={C.muted} size={21} />
+                  <Icon name="chevron-forward" color={C.muted} size={18} />
                 </Card>
               </Pressable>
             ))}
 
             {props.agents.length === 0 && (
-              <Card style={{ padding: 26, gap: 8 }}>
-                <Txt weight="700" size={17}>
+              <Card style={{ padding: 23, gap: 7 }}>
+                <Txt weight="700" size={15}>
                   Nenhum agente no espaço
                 </Txt>
-                <Txt color={C.muted} size={14}>
+                <Txt color={C.muted} size={12}>
                   Os fluxos e agentes reais são carregados da tua base de dados Supabase. Toca no
                   botão + acima para criar o teu primeiro agente autónomo.
                 </Txt>
@@ -666,21 +671,21 @@ export function ChatScreen(props: Props) {
           visible={creationOpen}
           onRequestClose={() => setCreationOpen(false)}
         >
-          <View style={{ flex: 1, backgroundColor: C.white, padding: 26, paddingTop: 45 }}>
+          <View style={{ flex: 1, backgroundColor: C.white, padding: 23, paddingTop: 40 }}>
             <View
               style={{
                 flexDirection: 'row',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: 35,
+                marginBottom: 31,
               }}
             >
-              <Txt size={27} weight="700">
+              <Txt size={24} weight="700">
                 Criar missão
               </Txt>
               <RoundButton icon="close" label="Fechar" onPress={() => setCreationOpen(false)} />
             </View>
-            <Txt size={13} color={C.muted} style={{ marginBottom: 10 }}>
+            <Txt size={11} color={C.muted} style={{ marginBottom: 9 }}>
               NOME DO AGENTE / MISSÃO
             </Txt>
             <TextInput
@@ -690,7 +695,7 @@ export function ChatScreen(props: Props) {
               style={styles.field}
               placeholderTextColor={C.faint}
             />
-            <Txt size={13} color={C.muted} style={{ marginTop: 20, marginBottom: 10 }}>
+            <Txt size={11} color={C.muted} style={{ marginTop: 18, marginBottom: 9 }}>
               INSTRUÇÃO OU PAPEL
             </Txt>
             <TextInput
@@ -698,7 +703,7 @@ export function ChatScreen(props: Props) {
               onChangeText={setAgentDescription}
               placeholder="Ex.: Pesquisar e sintetizar relatórios com ferramentas autónomas"
               multiline
-              style={[styles.field, { height: 110, textAlignVertical: 'top' }]}
+              style={[styles.field, { height: 97, textAlignVertical: 'top' }]}
               placeholderTextColor={C.faint}
             />
             <Pressable
@@ -744,21 +749,21 @@ export function ChatScreen(props: Props) {
       {/* Chat Header */}
       <View style={styles.header}>
         <RoundButton icon="chevron-back" label="Voltar aos agentes" onPress={props.onBack} />
-        <AgentAvatar size={42} />
+        <AgentAvatar size={37} />
         <View style={{ flex: 1 }}>
-          <Txt weight="700" size={18} numberOfLines={1}>
+          <Txt weight="700" size={16} numberOfLines={1}>
             {agent.name}
           </Txt>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 }}>
             <View
               style={{
-                width: 7,
-                height: 7,
+                width: 6,
+                height: 6,
                 borderRadius: 3.5,
                 backgroundColor: props.busy ? '#10B981' : '#9CA3AF',
               }}
             />
-            <Txt color={C.muted} size={12} numberOfLines={1}>
+            <Txt color={C.muted} size={11} numberOfLines={1}>
               {props.busy ? 'A pensar...' : (agent.config?.role || `${provider.toUpperCase()} · ${model}`)}
             </Txt>
           </View>
@@ -774,13 +779,13 @@ export function ChatScreen(props: Props) {
       <FlatList
         ref={listRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 25, flexGrow: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 22, flexGrow: 1 }}
         data={props.messages}
         keyExtractor={(m) => m.id}
         keyboardShouldPersistTaps="handled"
         renderItem={({ item }) => <MessageBubble item={item} agentName={agent.name} />}
         ListFooterComponent={
-          props.busy ? <ThinkingBubble agentName={agent.name} /> : <View style={{ height: 12 }} />
+          props.busy ? <ThinkingBubble agentName={agent.name} /> : <View style={{ height: 11 }} />
         }
         ListEmptyComponent={
           <View
@@ -788,15 +793,15 @@ export function ChatScreen(props: Props) {
               flex: 1,
               alignItems: 'center',
               justifyContent: 'center',
-              gap: 10,
-              marginBottom: 70,
+              gap: 9,
+              marginBottom: 62,
             }}
           >
-            <AgentAvatar size={74} />
-            <Txt size={26} weight="600" style={{ marginTop: 10, letterSpacing: -0.5 }}>
+            <AgentAvatar size={65} />
+            <Txt size={23} weight="600" style={{ marginTop: 9, letterSpacing: -0.5 }}>
               Como posso ajudar?
             </Txt>
-            <Txt size={14} color={C.muted} style={{ textAlign: 'center', paddingHorizontal: 30, lineHeight: 21 }}>
+            <Txt size={12} color={C.muted} style={{ textAlign: 'center', paddingHorizontal: 26, lineHeight: 18 }}>
               Conversa com {agent.name}. Podes colocar qualquer questão ou partilhar ficheiros para análise.
             </Txt>
           </View>
@@ -836,17 +841,17 @@ export function ChatScreen(props: Props) {
             }}
           >
             <View style={styles.menuIconCircle}>
-              <Icon name="sparkles-outline" size={20} color={C.ink} />
+              <Icon name="sparkles-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={13} weight="700">
                 Criar missão
               </Txt>
-              <Txt size={12} color={C.muted}>
+              <Txt size={11} color={C.muted}>
                 Missão autónoma no projeto
               </Txt>
             </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
+            <Icon name="chevron-forward" size={14} color={C.muted} />
           </Pressable>
 
           <View style={styles.menuDivider} />
@@ -857,17 +862,17 @@ export function ChatScreen(props: Props) {
             onPress={handleLaunchCamera}
           >
             <View style={styles.menuIconCircle}>
-              <Icon name="camera-outline" size={20} color={C.ink} />
+              <Icon name="camera-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={13} weight="700">
                 Câmara
               </Txt>
-              <Txt size={12} color={C.muted}>
+              <Txt size={11} color={C.muted}>
                 Tirar foto agora
               </Txt>
             </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
+            <Icon name="chevron-forward" size={14} color={C.muted} />
           </Pressable>
 
           <View style={styles.menuDivider} />
@@ -878,17 +883,17 @@ export function ChatScreen(props: Props) {
             onPress={handleLaunchGallery}
           >
             <View style={styles.menuIconCircle}>
-              <Icon name="image-outline" size={20} color={C.ink} />
+              <Icon name="image-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={13} weight="700">
                 Imagem ou vídeo
               </Txt>
-              <Txt size={12} color={C.muted}>
+              <Txt size={11} color={C.muted}>
                 Da galeria
               </Txt>
             </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
+            <Icon name="chevron-forward" size={14} color={C.muted} />
           </Pressable>
 
           <View style={styles.menuDivider} />
@@ -899,17 +904,17 @@ export function ChatScreen(props: Props) {
             onPress={handlePickDocument}
           >
             <View style={styles.menuIconCircle}>
-              <Icon name="attach-outline" size={20} color={C.ink} />
+              <Icon name="attach-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={13} weight="700">
                 Ficheiros
               </Txt>
-              <Txt size={12} color={C.muted}>
+              <Txt size={11} color={C.muted}>
                 Documentos e dados
               </Txt>
             </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
+            <Icon name="chevron-forward" size={14} color={C.muted} />
           </Pressable>
 
           <View style={styles.menuDivider} />
@@ -923,17 +928,17 @@ export function ChatScreen(props: Props) {
             }}
           >
             <View style={styles.menuIconCircle}>
-              <Icon name="aperture-outline" size={20} color={C.ink} />
+              <Icon name="aperture-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={13} weight="700">
                 Capture
               </Txt>
-              <Txt size={12} color={C.muted}>
+              <Txt size={11} color={C.muted}>
                 Enviar conteúdo capturado
               </Txt>
             </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
+            <Icon name="chevron-forward" size={14} color={C.muted} />
           </Pressable>
 
           <View style={styles.menuDivider} />
@@ -947,17 +952,17 @@ export function ChatScreen(props: Props) {
             }}
           >
             <View style={styles.menuIconCircle}>
-              <Icon name="extension-puzzle-outline" size={20} color={C.ink} />
+              <Icon name="extension-puzzle-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={13} weight="700">
                 Plugins
               </Txt>
-              <Txt size={12} color={C.muted}>
+              <Txt size={11} color={C.muted}>
                 Agentes e integrações
               </Txt>
             </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
+            <Icon name="chevron-forward" size={14} color={C.muted} />
           </Pressable>
         </Animated.View>
       )}
@@ -965,12 +970,12 @@ export function ChatScreen(props: Props) {
       {/* Attachment Chip Preview */}
       {attachment && (
         <View style={styles.attachmentChip}>
-          <Icon name="attach-outline" size={16} color={C.ink} />
-          <Txt size={13} weight="600" numberOfLines={1} style={{ flex: 1 }}>
+          <Icon name="attach-outline" size={14} color={C.ink} />
+          <Txt size={11} weight="600" numberOfLines={1} style={{ flex: 1 }}>
             {attachment.name}
           </Txt>
           <Pressable onPress={() => setAttachment(null)}>
-            <Icon name="close-circle" size={18} color={C.muted} />
+            <Icon name="close-circle" size={16} color={C.muted} />
           </Pressable>
         </View>
       )}
@@ -986,7 +991,7 @@ export function ChatScreen(props: Props) {
           style={styles.composeInput}
           accessibilityLabel="Mensagem ao agente"
         />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           {/* Animated Rotate Button: '+' spins 45deg to 'x' */}
           <Animated.View style={{ transform: [{ rotate: spin }] }}>
             <Pressable
@@ -1000,25 +1005,25 @@ export function ChatScreen(props: Props) {
             >
               <Icon
                 name="add"
-                size={23}
+                size={20}
                 color={showTools ? C.white : C.ink}
               />
             </Pressable>
           </Animated.View>
 
           <View style={styles.agentChip}>
-            <AgentAvatar size={22} />
-            <Txt size={14} weight="600" numberOfLines={1} style={{ flexShrink: 1 }}>
+            <AgentAvatar size={19} />
+            <Txt size={12} weight="600" numberOfLines={1} style={{ flexShrink: 1 }}>
               {agent.name}
             </Txt>
-            <Icon name="chevron-down" size={17} color={C.muted} />
+            <Icon name="chevron-down" size={15} color={C.muted} />
           </View>
           <View style={{ flex: 1 }} />
           <RoundButton
             icon="arrow-up"
             label="Enviar mensagem"
             primary={Boolean(draft.trim() || attachment) && !props.busy}
-            size={48}
+            size={42}
             disabled={props.busy || (!draft.trim() && !attachment)}
             onPress={async () => {
               if ((!draft.trim() && !attachment) || props.busy) return;
@@ -1045,21 +1050,21 @@ export function ChatScreen(props: Props) {
         presentationStyle="pageSheet"
         onRequestClose={() => setSettingsOpen(false)}
       >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 24, paddingTop: 40 }}>
+        <View style={{ flex: 1, backgroundColor: C.white, padding: 21, paddingTop: 35 }}>
           {/* Sheet Header */}
           <View
             style={{
               flexDirection: 'row',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: 20,
+              marginBottom: 18,
             }}
           >
             <View>
-              <Txt size={24} weight="700">
+              <Txt size={21} weight="700">
                 {agent.name}
               </Txt>
-              <Txt size={13} color={C.muted}>
+              <Txt size={11} color={C.muted}>
                 Configurações & Permissões do Agente
               </Txt>
             </View>
@@ -1067,7 +1072,7 @@ export function ChatScreen(props: Props) {
           </View>
 
           {/* Segmented Switcher */}
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', gap: 7, marginBottom: 18 }}>
             <Pill
               selected={settingsTab === 'model'}
               onPress={() => setSettingsTab('model')}
@@ -1084,21 +1089,26 @@ export function ChatScreen(props: Props) {
             </Pill>
           </View>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 35 }}>
             {settingsTab === 'model' ? (
-              <View style={{ gap: 16 }}>
+              <View style={{ gap: 14 }}>
                 {/* Provider Selector */}
                 <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
+                  <Txt size={11} weight="700" color={C.muted} style={{ marginBottom: 7 }}>
                     PROVEDOR DE IA
                   </Txt>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ gap: 8 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ gap: 7 }}>
                     {PROVIDERS.map((p) => (
                       <Pill
                         key={p}
                         selected={provider === p}
-                        onPress={() => setProvider(p)}
-                        style={{ marginRight: 8, minHeight: 40 }}
+                        onPress={() => {
+                          if (p === provider) return;
+                          setProvider(p);
+                          // Model IDs are provider-specific: reset to that provider's default
+                          if (!isKnownModel(p, model)) setModel(defaultModelFor(p));
+                        }}
+                        style={{ marginRight: 7, minHeight: 35 }}
                       >
                         {p.toUpperCase()}
                       </Pill>
@@ -1108,21 +1118,15 @@ export function ChatScreen(props: Props) {
 
                 {/* Model ID Input */}
                 <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
-                    ID DO MODELO
+                  <Txt size={11} weight="700" color={C.muted} style={{ marginBottom: 7 }}>
+                    MODELO
                   </Txt>
-                  <TextInput
-                    value={model}
-                    onChangeText={setModel}
-                    placeholder="ex.: gemini-1.5-pro, gpt-4o, claude-3-5-sonnet"
-                    style={styles.field}
-                    placeholderTextColor={C.faint}
-                  />
+                  <ModelPicker provider={provider} value={model} onChange={setModel} />
                 </View>
 
                 {/* System Prompt Input */}
                 <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
+                  <Txt size={11} weight="700" color={C.muted} style={{ marginBottom: 7 }}>
                     PROMPT DO SISTEMA / INSTRUÇÃO CENTRAL
                   </Txt>
                   <TextInput
@@ -1130,23 +1134,23 @@ export function ChatScreen(props: Props) {
                     onChangeText={setSystemPrompt}
                     multiline
                     placeholder="Instruções de personalidade, restrições e objetivos do agente..."
-                    style={[styles.field, { height: 100, textAlignVertical: 'top' }]}
+                    style={[styles.field, { height: 88, textAlignVertical: 'top' }]}
                     placeholderTextColor={C.faint}
                   />
                 </View>
 
                 {/* Temperature Selector */}
                 <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
+                  <Txt size={11} weight="700" color={C.muted} style={{ marginBottom: 7 }}>
                     TEMPERATURA
                   </Txt>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', gap: 7 }}>
                     {TEMPERATURES.map((t) => (
                       <Pill
                         key={t.val}
                         selected={temperature === t.val}
                         onPress={() => setTemperature(t.val)}
-                        style={{ flex: 1, minHeight: 40 }}
+                        style={{ flex: 1, minHeight: 35 }}
                       >
                         {t.label}
                       </Pill>
@@ -1156,16 +1160,16 @@ export function ChatScreen(props: Props) {
 
                 {/* Max Loops Selector */}
                 <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
+                  <Txt size={11} weight="700" color={C.muted} style={{ marginBottom: 7 }}>
                     ITERAÇÕES MÁXIMAS (LOOPS DE FERRAMENTAS)
                   </Txt>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', gap: 7 }}>
                     {MAX_LOOPS.map((l) => (
                       <Pill
                         key={l}
                         selected={maxIterations === l}
                         onPress={() => setMaxIterations(l)}
-                        style={{ flex: 1, minHeight: 40 }}
+                        style={{ flex: 1, minHeight: 35 }}
                       >
                         {l}
                       </Pill>
@@ -1174,17 +1178,17 @@ export function ChatScreen(props: Props) {
                 </View>
               </View>
             ) : (
-              <View style={{ gap: 14 }}>
-                <Txt size={13} color={C.muted} style={{ marginBottom: 4 }}>
+              <View style={{ gap: 12 }}>
+                <Txt size={11} color={C.muted} style={{ marginBottom: 4 }}>
                   Controle estrito de governança e permissões de execução (AgentGrants) no CELL SYSTEM.
                 </Txt>
 
                 <Card style={styles.grantRow}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
+                    <Txt weight="600" size={13}>
                       Editar Grafo Circular
                     </Txt>
-                    <Txt size={12} color={C.muted}>
+                    <Txt size={11} color={C.muted}>
                       Permitir adicionar ou alterar nós no fluxo circular.
                     </Txt>
                   </View>
@@ -1198,10 +1202,10 @@ export function ChatScreen(props: Props) {
 
                 <Card style={styles.grantRow}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
+                    <Txt weight="600" size={13}>
                       Executar Código (Sandbox)
                     </Txt>
-                    <Txt size={12} color={C.muted}>
+                    <Txt size={11} color={C.muted}>
                       Ambiente isolado Python / JavaScript.
                     </Txt>
                   </View>
@@ -1215,10 +1219,10 @@ export function ChatScreen(props: Props) {
 
                 <Card style={styles.grantRow}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
+                    <Txt weight="600" size={13}>
                       Pesquisa Web em Tempo Real
                     </Txt>
-                    <Txt size={12} color={C.muted}>
+                    <Txt size={11} color={C.muted}>
                       Aceder a páginas e notícias recentes via Internet.
                     </Txt>
                   </View>
@@ -1232,10 +1236,10 @@ export function ChatScreen(props: Props) {
 
                 <Card style={styles.grantRow}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
+                    <Txt weight="600" size={13}>
                       Efeitos Externos (APIs / Webhooks)
                     </Txt>
-                    <Txt size={12} color={C.muted}>
+                    <Txt size={11} color={C.muted}>
                       Chamar serviços externos e persistir alterações.
                     </Txt>
                   </View>
@@ -1249,10 +1253,10 @@ export function ChatScreen(props: Props) {
 
                 <Card style={styles.grantRow}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
+                    <Txt weight="600" size={13}>
                       Equipa Multi-Agente
                     </Txt>
-                    <Txt size={12} color={C.muted}>
+                    <Txt size={11} color={C.muted}>
                       Subdividir missões em trabalhadores especializados.
                     </Txt>
                   </View>
@@ -1266,10 +1270,10 @@ export function ChatScreen(props: Props) {
 
                 <Card style={styles.grantRow}>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
+                    <Txt weight="600" size={13}>
                       Verificação Obrigatória
                     </Txt>
-                    <Txt size={12} color={C.muted}>
+                    <Txt size={11} color={C.muted}>
                       Exigir checkpoints e asserções antes da conclusão.
                     </Txt>
                   </View>
@@ -1284,7 +1288,7 @@ export function ChatScreen(props: Props) {
             )}
 
             {/* Bottom Actions */}
-            <View style={{ marginTop: 28, gap: 12 }}>
+            <View style={{ marginTop: 25, gap: 11 }}>
               <Pressable
                 disabled={savingSettings}
                 onPress={handleSaveSettings}
@@ -1319,16 +1323,16 @@ export function ChatScreen(props: Props) {
         presentationStyle="pageSheet"
         onRequestClose={() => setLibraryOpen(false)}
       >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 24, paddingTop: 40 }}>
+        <View style={{ flex: 1, backgroundColor: C.white, padding: 21, paddingTop: 35 }}>
           <View
             style={{
               flexDirection: 'row',
               justifyContent: 'space-between',
               alignItems: 'center',
-              marginBottom: 20,
+              marginBottom: 18,
             }}
           >
-            <Txt size={24} weight="700">
+            <Txt size={21} weight="700">
               Biblioteca Capture
             </Txt>
             <RoundButton icon="close" label="Fechar" onPress={() => setLibraryOpen(false)} />
@@ -1338,9 +1342,9 @@ export function ChatScreen(props: Props) {
               <Pressable
                 key={item.id}
                 onPress={() => handleSelectCapture(item)}
-                style={{ marginBottom: 10 }}
+                style={{ marginBottom: 9 }}
               >
-                <Card style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Card style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 11 }}>
                   <Icon
                     name={
                       item.type === 'image'
@@ -1349,17 +1353,17 @@ export function ChatScreen(props: Props) {
                         ? 'document-outline'
                         : 'text-outline'
                     }
-                    size={24}
+                    size={21}
                   />
                   <View style={{ flex: 1 }}>
-                    <Txt weight="600" size={15}>
+                    <Txt weight="600" size={13}>
                       {item.title}
                     </Txt>
-                    <Txt color={C.muted} size={12}>
+                    <Txt color={C.muted} size={11}>
                       {item.source} · {new Date(item.createdAt).toLocaleDateString('pt-PT')}
                     </Txt>
                   </View>
-                  <Icon name="arrow-forward" size={18} color={C.muted} />
+                  <Icon name="arrow-forward" size={16} color={C.muted} />
                 </Card>
               </Pressable>
             ))}
@@ -1376,36 +1380,36 @@ export function ChatScreen(props: Props) {
 }
 
 const styles = StyleSheet.create({
-  agentCard: { padding: 17, minHeight: 91, flexDirection: 'row', alignItems: 'center' },
+  agentCard: { padding: 15, minHeight: 80, flexDirection: 'row', alignItems: 'center' },
   field: {
     backgroundColor: C.surface,
     borderWidth: 1,
     borderColor: C.border,
     borderRadius: 20,
-    padding: 16,
-    fontSize: 15,
+    padding: 14,
+    fontSize: 13,
     color: C.ink,
   },
   blackButton: {
     backgroundColor: C.ink,
     borderRadius: R.pill,
-    height: 54,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
   header: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 11,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 11,
     borderBottomWidth: 1,
     borderColor: '#F1F1F1',
   },
   bubble: {
     maxWidth: '85%',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     borderRadius: 20,
   },
   userBubble: {
@@ -1417,17 +1421,17 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 4,
   },
   copyPillContainer: {
-    marginBottom: 6,
+    marginBottom: 5,
     alignSelf: 'flex-end',
   },
   copyPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
     backgroundColor: C.ink,
     borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
@@ -1435,27 +1439,27 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   composer: {
-    marginHorizontal: 17,
-    marginBottom: 12,
+    marginHorizontal: 15,
+    marginBottom: 11,
     borderRadius: R.composer,
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: C.surface,
-    paddingHorizontal: 12,
-    paddingTop: 16,
-    paddingBottom: 11,
+    paddingHorizontal: 11,
+    paddingTop: 14,
+    paddingBottom: 10,
   },
   composeInput: {
-    minHeight: 43,
-    maxHeight: 150,
-    fontSize: 17,
+    minHeight: 38,
+    maxHeight: 132,
+    fontSize: 15,
     color: C.ink,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     textAlignVertical: 'top',
   },
   plusButton: {
-    width: 46,
-    height: 46,
+    width: 40,
+    height: 40,
     borderRadius: 23,
     backgroundColor: C.surface2,
     borderWidth: 1,
@@ -1464,27 +1468,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   agentChip: {
-    height: 44,
+    height: 39,
     borderRadius: 30,
     borderWidth: 1,
     borderColor: C.border,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    maxWidth: 168,
+    gap: 7,
+    paddingHorizontal: 9,
+    maxWidth: 148,
   },
   floatingMenuCard: {
     backgroundColor: C.white,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: '#EFEFEF',
-    marginHorizontal: 17,
-    marginBottom: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
+    marginHorizontal: 15,
+    marginBottom: 9,
+    paddingVertical: 5,
+    paddingHorizontal: 7,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.1,
     shadowRadius: 14,
     elevation: 8,
@@ -1492,14 +1496,14 @@ const styles = StyleSheet.create({
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+    gap: 11,
+    paddingVertical: 9,
+    paddingHorizontal: 9,
     borderRadius: 16,
   },
   menuIconCircle: {
-    width: 38,
-    height: 38,
+    width: 33,
+    height: 33,
     borderRadius: 19,
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
@@ -1508,25 +1512,25 @@ const styles = StyleSheet.create({
   menuDivider: {
     height: 1,
     backgroundColor: '#F3F4F6',
-    marginHorizontal: 10,
+    marginHorizontal: 9,
   },
   attachmentChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
     backgroundColor: C.surface2,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: C.border,
-    marginHorizontal: 17,
-    marginBottom: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    marginHorizontal: 15,
+    marginBottom: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
   },
   grantRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
+    padding: 14,
   },
 });

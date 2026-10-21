@@ -9,7 +9,7 @@ const ORIGINAL_LOGO = require('../assets/cell-agent-logo-original.jpg');
 /** The image is merely displayed larger in a clipped square avatar.
  * No pixels of the source artwork, shapes, eyes or colors are modified.
  */
-export function AgentAvatar({ size = 48 }: { size?: number; dark?: boolean }) {
+export function AgentAvatar({ size = 42 }: { size?: number; dark?: boolean }) {
   const zoom = 2.15; // black face occupies ~86% of avatar instead of ~40%
   const renderedSize = size * zoom;
   return (
