@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Switch, TextInput, View } from 'react-native';
 import { Icon, Txt } from '../UI';
 import { C } from '../../theme';
@@ -55,23 +55,50 @@ function Answered({ answer }: { answer: UiAnswer }) {
 
 function useSubmit(id: string, onInteract?: InteractFn) {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const last = useRef<UiAnswer | null>(null);
+  const busy = useRef(false); // synchronous guard against double taps
   const submit = async (answer: UiAnswer) => {
-    if (loading || !onInteract) return;
+    if (busy.current || !onInteract) return;
+    busy.current = true;
+    last.current = answer;
+    setError(null);
     setLoading(true);
     try {
       await onInteract(id, answer);
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : 'Não foi possível enviar a resposta.');
     } finally {
+      busy.current = false;
       setLoading(false);
     }
   };
-  return { loading, submit, disabled: !onInteract };
+  const retry = () => {
+    if (last.current) submit(last.current);
+  };
+  return { loading, error, submit, retry, disabled: !onInteract };
+}
+
+function SendError({ error, onRetry, loading }: { error: string | null; onRetry: () => void; loading: boolean }) {
+  if (!error || loading) return null;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 8, flexWrap: 'wrap' }}>
+      <Icon name="alert-circle-outline" size={14} color={C.error} />
+      <Txt size={11} color={C.error} style={{ flexShrink: 1 }} numberOfLines={2}>
+        {`Falha ao enviar. ${error}`}
+      </Txt>
+      <Pressable onPress={onRetry} accessibilityRole="button" hitSlop={8}>
+        <Txt size={11} weight="700" style={{ textDecorationLine: 'underline' }}>Tentar novamente</Txt>
+      </Pressable>
+    </View>
+  );
 }
 
 const Title = ({ t }: { t?: string }) => (t ? <Txt size={12} weight="700" style={{ marginBottom: 7 }}>{t}</Txt> : null);
 
 export function ChoicesView({ b, answer, onInteract }: Props<Extract<UiBlock, { type: 'choices' }>>) {
   const [picked, setPicked] = useState<string[]>([]);
-  const { loading, submit, disabled } = useSubmit(b.id, onInteract);
+  const { loading, error, submit, retry, disabled } = useSubmit(b.id, onInteract);
   const chosen = (answer?.values.selected as string[] | undefined) ?? picked;
   const send = (ids: string[]) => {
     const labels = b.options.filter((o) => ids.includes(o.id)).map((o) => o.label);
@@ -87,7 +114,13 @@ export function ChoicesView({ b, answer, onInteract }: Props<Extract<UiBlock, { 
             <Pressable
               key={o.id}
               disabled={!!answer || loading || disabled}
-              onPress={() => (b.multi ? setPicked((p) => (p.includes(o.id) ? p.filter((x) => x !== o.id) : [...p, o.id])) : send([o.id]))}
+              onPress={() => {
+                if (b.multi) setPicked((p) => (p.includes(o.id) ? p.filter((x) => x !== o.id) : [...p, o.id]));
+                else {
+                  setPicked([o.id]); // keep the selection visible while sending / after a failure
+                  send([o.id]);
+                }
+              }}
               style={{
                 borderRadius: 999,
                 borderWidth: 1,
@@ -113,12 +146,13 @@ export function ChoicesView({ b, answer, onInteract }: Props<Extract<UiBlock, { 
       ) : loading ? (
         <ActivityIndicator size="small" color={C.ink} style={{ marginTop: 7, alignSelf: 'flex-start' }} />
       ) : null}
+      {!answer && <SendError error={error} loading={loading} onRetry={b.multi && picked.length ? () => send(picked) : retry} />}
     </View>
   );
 }
 
 export function ConfirmView({ b, answer, onInteract }: Props<Extract<UiBlock, { type: 'confirm' }>>) {
-  const { loading, submit, disabled } = useSubmit(b.id, onInteract);
+  const { loading, error, submit, retry, disabled } = useSubmit(b.id, onInteract);
   const [which, setWhich] = useState<string | null>(null);
   const act = (action: 'approve' | 'reject') => {
     setWhich(action);
@@ -132,17 +166,18 @@ export function ConfirmView({ b, answer, onInteract }: Props<Extract<UiBlock, { 
         <Answered answer={answer} />
       ) : (
         <View style={{ flexDirection: 'row', gap: 7, marginTop: 9 }}>
-          <Button label={b.approve || 'Aprovar'} primary={b.tone !== 'danger'} danger={b.tone === 'danger'} disabled={disabled} loading={loading && which === 'approve'} onPress={() => act('approve')} />
+          <Button label={b.approve || 'Aprovar'} primary={b.tone !== 'danger'} danger={b.tone === 'danger'} disabled={disabled || loading} loading={loading && which === 'approve'} onPress={() => act('approve')} />
           <Button label={b.reject || 'Rejeitar'} disabled={disabled || loading} loading={loading && which === 'reject'} onPress={() => act('reject')} />
         </View>
       )}
+      {!answer && <SendError error={error} loading={loading} onRetry={retry} />}
     </View>
   );
 }
 
 export function FormView({ b, answer, onInteract }: Props<Extract<UiBlock, { type: 'form' }>>) {
   const [values, setValues] = useState<Record<string, string | boolean>>({});
-  const { loading, submit, disabled } = useSubmit(b.id, onInteract);
+  const { loading, error, submit, retry, disabled } = useSubmit(b.id, onInteract);
   const shown = (answer?.values as Record<string, string | boolean> | undefined) ?? values;
   const set = (k: string, v: string | boolean) => setValues((p) => ({ ...p, [k]: v }));
   const missing = b.fields.some((f) => f.required && f.kind !== 'toggle' && !String(values[f.name] ?? '').trim());
@@ -212,6 +247,7 @@ export function FormView({ b, answer, onInteract }: Props<Extract<UiBlock, { typ
           <Button label={b.submit || 'Enviar'} primary disabled={missing || disabled} loading={loading} onPress={send} />
         </View>
       )}
+      {!answer && <SendError error={error} loading={loading} onRetry={missing ? retry : send} />}
     </View>
   );
 }

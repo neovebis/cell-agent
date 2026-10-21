@@ -25,6 +25,7 @@ import { defaultModelFor, isKnownModel } from '../services/models';
 import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
 import { C, R } from '../theme';
 import type {
+  SendOptions,
   UiAnswer,
   Agent,
   AgentConfig,
@@ -44,7 +45,7 @@ type Props = {
   onOpen: (agent: Agent) => void;
   onBack: () => void;
   onNew: (name: string, description: string) => void;
-  onSend: (content: string, attachment?: FileAttachment) => Promise<void>;
+  onSend: (content: string, attachment?: FileAttachment, opts?: SendOptions) => Promise<void>;
   onRefresh: () => void;
   onError: (message: string) => void;
   onClearHistory?: (agentId: string) => Promise<void>;
@@ -357,12 +358,24 @@ export function ChatScreen(props: Props) {
   useEffect(() => {
     loadUiAnswers().then(setUiAnswers).catch(() => {});
   }, []);
+  const pendingInteractions = useRef(new Set<string>());
   const handleInteract = async (key: string, blockId: string, answer: UiAnswer) => {
-    if (uiAnswers[key]) return; // already answered
-    // Lock immediately (prevents double submits), then send as a new run in this chat
-    setUiAnswers((prev) => ({ ...prev, [key]: answer }));
-    saveUiAnswer(key, answer).catch(() => {});
-    await props.onSend(buildInteractionMessage(answer.summary, blockId, answer.action, answer.values));
+    // Guard: already answered or a send for this block is in flight
+    if (uiAnswers[key] || pendingInteractions.current.has(key)) return;
+    pendingInteractions.current.add(key);
+    try {
+      // Throws if the run POST fails (block stays editable and offers a retry)
+      await props.onSend(buildInteractionMessage(answer.summary, blockId, answer.action, answer.values), undefined, {
+        interaction: true,
+        // Lock + persist only once the backend accepted the run
+        onAccepted: () => {
+          setUiAnswers((prev) => ({ ...prev, [key]: answer }));
+          saveUiAnswer(key, answer).catch(() => {});
+        },
+      });
+    } finally {
+      pendingInteractions.current.delete(key);
+    }
   };
   const [creationOpen, setCreationOpen] = useState(false);
   const [creatingAgent, setCreatingAgent] = useState(false);

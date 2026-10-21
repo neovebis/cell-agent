@@ -12,6 +12,7 @@ import type {
   CredentialVaultItem,
   FileAttachment,
   GlobalVariableItem,
+  SendOptions,
   Session,
   WorkspaceInfo,
 } from '../types';
@@ -113,6 +114,15 @@ class RealCellGateway implements CellGateway {
       const list = await this.getLocalMessages();
       const updated = [...list, msg];
       await SecureStore.setItemAsync(MESSAGES_STORAGE_KEY, JSON.stringify(updated.slice(-300)));
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  private async removeLocalMessage(id: string): Promise<void> {
+    try {
+      const list = await this.getLocalMessages();
+      await SecureStore.setItemAsync(MESSAGES_STORAGE_KEY, JSON.stringify(list.filter((m) => m.id !== id)));
     } catch {
       // Non-fatal
     }
@@ -739,7 +749,8 @@ class RealCellGateway implements CellGateway {
     agentId: string,
     content: string,
     attachments?: FileAttachment[],
-    session?: Session
+    session?: Session,
+    opts?: SendOptions
   ): Promise<AgentMessage> {
     if (!session?.accessToken) {
       throw new Error('Sessão necessária para comunicar com os agentes.');
@@ -761,6 +772,7 @@ class RealCellGateway implements CellGateway {
     await this.saveLocalMessage(userMessage);
 
     // Call live backend agent execution API
+    let accepted = false;
     try {
       const filesPayload =
         attachments && attachments.length > 0
@@ -788,6 +800,8 @@ class RealCellGateway implements CellGateway {
       });
 
       if (res.ok) {
+        accepted = true;
+        opts?.onAccepted?.();
         const body = await res.json().catch(() => ({}));
         const runId = body?.run?.id;
 
@@ -870,6 +884,11 @@ class RealCellGateway implements CellGateway {
         throw new Error(errorBody.message || 'Não foi possível contactar o agente neste momento.');
       }
     } catch (e: any) {
+      if (opts?.interaction && !accepted) {
+        // Interaction not delivered: drop the user bubble and let the block offer a retry
+        await this.removeLocalMessage(userMessage.id);
+        throw e instanceof Error ? e : new Error('Não foi possível enviar a resposta.');
+      }
       const errorMessage: AgentMessage = {
         id: uid(),
         agentId,

@@ -76,6 +76,16 @@ export interface UiFormField {
   required?: boolean;
   placeholder?: string;
 }
+export interface SendOptions {
+  /** Called as soon as the backend accepts the run (POST succeeded). */
+  onAccepted?: () => void;
+  /**
+   * Smart-UI interaction: if the POST fails, the local user message is removed and the
+   * error is thrown (no error bubble) so the block can offer "Tentar novamente".
+   */
+  interaction?: boolean;
+}
+
 /** A submitted answer to an interactive block (persisted locally so the block stays locked). */
 export interface UiAnswer {
   action: string;
@@ -195,7 +205,8 @@ export interface CellGateway {
     agentId: string,
     content: string,
     attachments?: FileAttachment[],
-    session?: Session
+    session?: Session,
+    opts?: SendOptions
   ): Promise<AgentMessage>;
   clearMessages(agentId: string): Promise<void>;
   getCaptures(session?: Session): Promise<CaptureItem[]>;

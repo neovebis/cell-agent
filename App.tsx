@@ -27,6 +27,7 @@ import { forgetSession, loadSession, saveSession } from './src/services/session'
 import { stripUiInstruction } from './src/services/smartui';
 import { C } from './src/theme';
 import type {
+  SendOptions,
   ActivityItem,
   Agent,
   AgentConfig,
@@ -236,7 +237,7 @@ function Root() {
     loadMessages(agent, session);
   };
 
-  const sendMessage = async (content: string, attachment?: FileAttachment) => {
+  const sendMessage = async (content: string, attachment?: FileAttachment, opts?: SendOptions) => {
     if (!activeAgent) return;
 
     const optimisticId = `opt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -259,12 +260,18 @@ function Root() {
         activeAgent.id,
         content,
         attachment ? [attachment] : undefined,
-        session ?? undefined
+        session ?? undefined,
+        opts
       );
       await loadMessages(activeAgent, session);
       const acts = await gateway.getActivity(session ?? undefined);
       setActivity(acts);
     } catch (e) {
+      if (opts?.interaction) {
+        // The block shows the error and a retry; no orphan bubble
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        throw e;
+      }
       setMessages((prev) =>
         prev.map((m) => (m.id === optimisticId ? { ...m, status: 'failed' } : m))
       );
