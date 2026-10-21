@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { forgetSession, saveSession } from './session';
 import type {
   ActivityItem,
   Agent,
@@ -38,6 +39,64 @@ const MESSAGES_STORAGE_KEY = 'cell_mobile_messages_store_v2';
 
 class RealCellGateway implements CellGateway {
   demo = false as const;
+
+  /** Called when the session can no longer be refreshed (user must sign in again). */
+  onSessionExpired?: () => void;
+
+  private refreshing: Promise<boolean> | null = null;
+
+  private async refreshSession(session: Partial<Session>): Promise<boolean> {
+    if (!session.refreshToken) return false;
+    if (!this.refreshing) {
+      this.refreshing = (async () => {
+        try {
+          const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+            method: 'POST',
+            headers: { apikey: supabaseAnonKey, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: session.refreshToken }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.access_token) return false;
+          session.accessToken = data.access_token;
+          session.refreshToken = data.refresh_token || session.refreshToken;
+          session.expiresAt = Date.now() + Number(data.expires_in || 3600) * 1000;
+          if (session.displayName) await saveSession(session as Session).catch(() => {});
+          return true;
+        } catch {
+          return false;
+        }
+      })().finally(() => {
+        this.refreshing = null;
+      });
+    }
+    return this.refreshing;
+  }
+
+  private async expireSession(): Promise<void> {
+    await forgetSession().catch(() => {});
+    this.onSessionExpired?.();
+  }
+
+  /**
+   * fetch with the session's bearer token: refreshes shortly before expiry and,
+   * on a 401, refreshes once and retries. Clears the session if refresh fails.
+   */
+  private async authFetch(session: Partial<Session>, url: string, init: RequestInit = {}): Promise<Response> {
+    if (session.refreshToken && session.expiresAt && Date.now() > session.expiresAt - 60_000) {
+      if (!(await this.refreshSession(session))) await this.expireSession();
+    }
+    const withToken = (): RequestInit => ({
+      ...init,
+      headers: { ...((init.headers as Record<string, string>) || {}), Authorization: `Bearer ${session.accessToken}` },
+    });
+    const res = await fetch(url, withToken());
+    if (res.status !== 401 || !session.refreshToken) return res;
+    if (!(await this.refreshSession(session))) {
+      await this.expireSession();
+      return res;
+    }
+    return fetch(url, withToken());
+  }
 
   private async getLocalMessages(): Promise<AgentMessage[]> {
     try {
@@ -93,7 +152,7 @@ class RealCellGateway implements CellGateway {
   private async resolveActiveWorkspace(session: { accessToken: string; userId?: string }): Promise<string> {
     // 1. Try cells_workspaces table
     try {
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_workspaces?select=id,name,tier&order=created_at.desc&limit=1`,
         {
           headers: {
@@ -113,7 +172,7 @@ class RealCellGateway implements CellGateway {
     // 2. Try cells_workspace_members table
     if (session.userId) {
       try {
-        const memRes = await fetch(
+        const memRes = await this.authFetch(session, 
           `${supabaseUrl}/rest/v1/cells_workspace_members?user_id=eq.${encodeURIComponent(session.userId)}&status=eq.active&select=workspace_id&limit=1`,
           {
             headers: {
@@ -133,7 +192,7 @@ class RealCellGateway implements CellGateway {
 
     // 3. Try cells_workflows to see where existing workflows live
     try {
-      const wfRes = await fetch(
+      const wfRes = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_workflows?select=workspace_id&order=updated_at.desc&limit=1`,
         {
           headers: {
@@ -193,6 +252,8 @@ class RealCellGateway implements CellGateway {
 
     return {
       accessToken,
+      refreshToken: data.refresh_token,
+      expiresAt: Date.now() + Number(data.expires_in || 3600) * 1000,
       displayName,
       email: userEmail,
       workspaceId,
@@ -205,7 +266,7 @@ class RealCellGateway implements CellGateway {
 
     // Query cells_workspaces table (tier column, not plan)
     try {
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_workspaces?select=id,name,tier,owner_id,created_at&order=created_at.desc`,
         {
           headers: {
@@ -233,7 +294,7 @@ class RealCellGateway implements CellGateway {
     // Query cells_workspace_members if cells_workspaces is empty
     if (session.userId) {
       try {
-        const memRes = await fetch(
+        const memRes = await this.authFetch(session, 
           `${supabaseUrl}/rest/v1/cells_workspace_members?user_id=eq.${encodeURIComponent(session.userId)}&status=eq.active&select=workspace_id,role`,
           {
             headers: {
@@ -263,7 +324,7 @@ class RealCellGateway implements CellGateway {
 
     try {
       // Query without hardcoded workspace_id filter so Supabase RLS returns all workflows the user can access
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_workflows?select=id,name,description,graph,viewport,workspace_id,user_id,is_active,created_at,updated_at&order=updated_at.desc&limit=100`,
         {
           headers: {
@@ -404,7 +465,7 @@ class RealCellGateway implements CellGateway {
     let userId = session.userId;
     if (!userId) {
       try {
-        const uRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        const uRes = await this.authFetch(session, `${supabaseUrl}/auth/v1/user`, {
           headers: {
             apikey: supabaseAnonKey,
             Authorization: `Bearer ${session.accessToken}`,
@@ -461,7 +522,7 @@ class RealCellGateway implements CellGateway {
       updated_at: now(),
     };
 
-    let res = await fetch(`${supabaseUrl}/rest/v1/cells_workflows`, {
+    let res = await this.authFetch(session, `${supabaseUrl}/rest/v1/cells_workflows`, {
       method: 'POST',
       headers: {
         apikey: supabaseAnonKey,
@@ -481,7 +542,7 @@ class RealCellGateway implements CellGateway {
           payload.workspace_id = freshWsId;
           session.workspaceId = freshWsId;
           targetWsId = freshWsId;
-          res = await fetch(`${supabaseUrl}/rest/v1/cells_workflows`, {
+          res = await this.authFetch(session, `${supabaseUrl}/rest/v1/cells_workflows`, {
             method: 'POST',
             headers: {
               apikey: supabaseAnonKey,
@@ -567,7 +628,7 @@ class RealCellGateway implements CellGateway {
     const cleanWfId = workflowId.includes(':') ? workflowId.split(':')[0] : workflowId;
 
     try {
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${apiBaseUrl}/api/agents/profile?workflowId=${encodeURIComponent(cleanWfId)}`,
         {
           headers: {
@@ -647,7 +708,7 @@ class RealCellGateway implements CellGateway {
     if (!session?.accessToken) throw new Error('Sessão necessária para salvar perfil.');
     const cleanWfId = workflowId.includes(':') ? workflowId.split(':')[0] : workflowId;
 
-    const res = await fetch(`${apiBaseUrl}/api/agents/profile`, {
+    const res = await this.authFetch(session, `${apiBaseUrl}/api/agents/profile`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -704,7 +765,7 @@ class RealCellGateway implements CellGateway {
             }))
           : undefined;
 
-      const res = await fetch(`${apiBaseUrl}/api/agents/runs`, {
+      const res = await this.authFetch(session, `${apiBaseUrl}/api/agents/runs`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -725,7 +786,7 @@ class RealCellGateway implements CellGateway {
 
         if (runId) {
           // Immediately trigger execution drain tick
-          fetch(`${apiBaseUrl}/api/agents/tick`, {
+          this.authFetch(session, `${apiBaseUrl}/api/agents/tick`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -740,7 +801,7 @@ class RealCellGateway implements CellGateway {
           for (let attempt = 0; attempt < 12; attempt++) {
             await new Promise((r) => setTimeout(r, 1800));
 
-            const pollRes = await fetch(`${apiBaseUrl}/api/agents/runs?id=${encodeURIComponent(runId)}`, {
+            const pollRes = await this.authFetch(session, `${apiBaseUrl}/api/agents/runs?id=${encodeURIComponent(runId)}`, {
               headers: {
                 Authorization: `Bearer ${session.accessToken}`,
                 'x-workspace-id': session.workspaceId || 'ws_default',
@@ -826,7 +887,7 @@ class RealCellGateway implements CellGateway {
     }
 
     try {
-      const res = await fetch(
+      const res = await this.authFetch(session, 
         `${apiBaseUrl}/api/agents/runs?workflowId=${encodeURIComponent(workflowId)}`,
         {
           headers: {
@@ -887,7 +948,7 @@ class RealCellGateway implements CellGateway {
 
     // 1. Try Cloudflare Pages /api/credentials
     try {
-      const res = await fetch(`${apiBaseUrl}/api/credentials`, {
+      const res = await this.authFetch(session, `${apiBaseUrl}/api/credentials`, {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
           'x-workspace-id': session.workspaceId || 'ws_default',
@@ -910,7 +971,7 @@ class RealCellGateway implements CellGateway {
 
     // 2. Direct Supabase fallback
     try {
-      const sbRes = await fetch(
+      const sbRes = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_credentials?select=id,name,provider,created_at&order=created_at.desc`,
         {
           headers: {
@@ -943,7 +1004,7 @@ class RealCellGateway implements CellGateway {
 
     // 1. Try Cloudflare Pages /api/variables
     try {
-      const res = await fetch(`${apiBaseUrl}/api/variables`, {
+      const res = await this.authFetch(session, `${apiBaseUrl}/api/variables`, {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
           'x-workspace-id': session.workspaceId || 'ws_default',
@@ -966,7 +1027,7 @@ class RealCellGateway implements CellGateway {
 
     // 2. Direct Supabase fallback
     try {
-      const sbRes = await fetch(
+      const sbRes = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_credentials?provider=eq.variable&select=id,name,created_at&order=created_at.desc`,
         {
           headers: {
@@ -1064,7 +1125,7 @@ class RealCellGateway implements CellGateway {
 
     // 1. Try Cloudflare Pages /api/jobs
     try {
-      const res = await fetch(`${apiBaseUrl}/api/jobs`, {
+      const res = await this.authFetch(session, `${apiBaseUrl}/api/jobs`, {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
           'x-workspace-id': session.workspaceId || 'ws_default',
@@ -1103,7 +1164,7 @@ class RealCellGateway implements CellGateway {
 
     // 2. Direct Supabase fallback via cells_executions
     try {
-      const sbRes = await fetch(
+      const sbRes = await this.authFetch(session, 
         `${supabaseUrl}/rest/v1/cells_executions?select=id,workflow_id,status,trigger_type,created_at,error_message&order=created_at.desc&limit=50`,
         {
           headers: {

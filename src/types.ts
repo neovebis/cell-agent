@@ -120,6 +120,9 @@ export interface GlobalVariableItem {
 
 export interface Session {
   accessToken: string;
+  refreshToken?: string;
+  /** Epoch ms when accessToken expires. */
+  expiresAt?: number;
   displayName: string;
   email?: string;
   workspaceId?: string;
@@ -159,4 +162,6 @@ export interface CellGateway {
   getCredentials(session?: Session): Promise<CredentialVaultItem[]>;
   getVariables(session?: Session): Promise<GlobalVariableItem[]>;
   registerPush(token: string, session?: Session): Promise<void>;
+  /** Optional hook fired when the session expired and could not be refreshed. */
+  onSessionExpired?: () => void;
 }
