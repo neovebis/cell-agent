@@ -17,6 +17,7 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AgentAvatar } from '../components/AgentAvatar';
+import { SmartUiView } from '../components/blocks/SmartBlocks';
 import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
 import { C, R } from '../theme';
 import type {
@@ -277,6 +278,8 @@ function MessageBubble({
         >
           {item.content}
         </Txt>
+
+        {!isUser && item.ui && item.ui.blocks.length > 0 && <SmartUiView ui={item.ui} />}
 
         {item.attachments && item.attachments.length > 0 && (
           <View style={{ marginTop: 7, gap: 4 }}>

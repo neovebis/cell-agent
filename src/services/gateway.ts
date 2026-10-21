@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { forgetSession, saveSession } from './session';
+import { parseAgentOutput, stripUiInstruction, withUiInstruction } from './smartui';
 import type {
   ActivityItem,
   Agent,
@@ -778,7 +779,8 @@ class RealCellGateway implements CellGateway {
         },
         body: JSON.stringify({
           workflowId,
-          message: content,
+          // Smart UI: format instruction travels with the message only (stripped from history)
+          message: withUiInstruction(content),
           idempotencyKey: uid(),
           files: filesPayload,
         }),
@@ -802,8 +804,11 @@ class RealCellGateway implements CellGateway {
 
           // Poll run status for completion
           let answerText: string | null = null;
-          for (let attempt = 0; attempt < 12; attempt++) {
-            await new Promise((r) => setTimeout(r, 1800));
+          let answerUi: AgentMessage['ui'];
+          // Poll with backoff (1.5s -> max 6s) for up to ~90s
+          const deadline = Date.now() + 90_000;
+          for (let attempt = 0; Date.now() < deadline; attempt++) {
+            await new Promise((r) => setTimeout(r, Math.min(1500 * 1.35 ** attempt, 6000)));
 
             const pollRes = await this.authFetch(session, `${apiBaseUrl}/api/agents/runs?id=${encodeURIComponent(runId)}`, {
               headers: {
@@ -817,12 +822,10 @@ class RealCellGateway implements CellGateway {
               const currentRun = pollData?.run;
 
               if (currentRun?.status === 'success') {
-                answerText =
-                  currentRun.answer ||
-                  currentRun.final_output ||
-                  currentRun.output ||
-                  currentRun.summary ||
-                  'Resposta concluída.';
+                const raw = currentRun.answer || currentRun.final_output || currentRun.output || currentRun.summary;
+                const parsed = raw ? parseAgentOutput(raw) : { text: 'Resposta concluída.' };
+                answerText = parsed.text || 'Resposta concluída.';
+                answerUi = parsed.ui;
                 break;
               } else if (currentRun?.status === 'failed') {
                 answerText =
@@ -845,6 +848,7 @@ class RealCellGateway implements CellGateway {
               content: answerText,
               createdAt: now(),
               status: 'sent',
+              ui: answerUi,
             };
             await this.saveLocalMessage(assistantMessage);
           } else {
@@ -913,18 +917,20 @@ class RealCellGateway implements CellGateway {
                 id: `remote_u_${r.id}`,
                 agentId,
                 role: 'user',
-                content: String(r.message),
+                content: stripUiInstruction(String(r.message)),
                 createdAt: r.createdAt || r.created_at || now(),
                 status: 'sent',
               });
             }
             const out = r.answer || r.final_output || r.output || r.summary || r.last_error;
             if (out) {
+              const parsed = parseAgentOutput(out);
               remoteMessages.push({
                 id: `remote_a_${r.id}`,
                 agentId,
                 role: 'assistant',
-                content: typeof out === 'string' ? out : JSON.stringify(out, null, 2),
+                ui: parsed.ui,
+                content: parsed.text,
                 createdAt: r.updatedAt || r.finished_at || now(),
                 status: 'sent',
               });

@@ -63,6 +63,36 @@ export interface AgentMessage {
   createdAt: string;
   status?: 'sending' | 'sent' | 'failed';
   attachments?: { name: string; mimeType: string }[];
+  /** Optional structured "smart UI" rendered below the text. */
+  ui?: SmartUi;
+}
+
+export type UiTone = 'up' | 'down' | 'flat';
+export type UiBlock =
+  | { type: 'prose'; text: string }
+  | { type: 'callout'; title?: string; text: string }
+  | { type: 'kpis'; items: { label: string; value: string; delta?: string; hint?: string; tone?: UiTone }[] }
+  | {
+      type: 'table';
+      title?: string;
+      columns: { key: string; label: string; align?: 'left' | 'right' }[];
+      rows: Record<string, string>[];
+    }
+  | { type: 'bars'; title?: string; unit?: string; items: { label: string; value: number; note?: string }[] }
+  | { type: 'steps'; title?: string; items: { title: string; detail?: string }[] }
+  | { type: 'checklist'; title?: string; items: { label: string; done?: boolean }[] }
+  | {
+      type: 'timeline';
+      title?: string;
+      events: { when: string; title: string; detail?: string; state?: 'done' | 'now' | 'next' }[];
+    };
+
+export interface SmartUi {
+  v: 1;
+  title?: string;
+  kicker?: string;
+  summary?: string;
+  blocks: UiBlock[];
 }
 
 export interface CaptureItem {
