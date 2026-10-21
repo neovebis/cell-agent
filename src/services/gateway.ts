@@ -722,26 +722,76 @@ class RealCellGateway implements CellGateway {
   ): Promise<void> {
     if (!session?.accessToken) throw new Error('Sessão necessária para salvar perfil.');
     const cleanWfId = workflowId.includes(':') ? workflowId.split(':')[0] : workflowId;
+    const headers = {
+      Authorization: `Bearer ${session.accessToken}`,
+      'x-workspace-id': session.workspaceId || 'ws_default',
+    };
+
+    // Start from the profile currently stored on the server (same shape the website sends back)
+    let current: Record<string, any> = {};
+    try {
+      const cur = await this.authFetch(
+        session,
+        `${apiBaseUrl}/api/agents/profile?workflowId=${encodeURIComponent(cleanWfId)}`,
+        { headers }
+      );
+      if (cur.ok) current = (await cur.json().catch(() => ({})))?.profile || {};
+    } catch {}
+
+    const cfg = profile.config;
+    const provider = String(cfg?.provider || current.provider || 'openai');
+    const model = String(cfg?.model || '').trim();
+    if (!model) throw new Error('Seleciona um modelo.');
+
+    // The backend needs a vault credential for the chosen provider
+    let credentialId: string = cfg?.credentialId || '';
+    if (!credentialId && current.provider === provider) credentialId = current.credentialId || '';
+    if (!credentialId) {
+      const creds = await this.getCredentials(session).catch(() => [] as CredentialVaultItem[]);
+      credentialId = creds.find((c) => c.provider.toLowerCase() === provider.toLowerCase())?.id || '';
+    }
+    if (!credentialId) {
+      throw new Error(`Não há nenhuma API de IA "${provider}" configurada no cofre deste workspace. Configura-a no site ou escolhe outro provedor.`);
+    }
+
+    const g = { ...(current.grants || {}), ...(profile.grants || {}) } as Record<string, any>;
+    const body = {
+      workflowId: cleanWfId,
+      // Only the fields the profile API returns/accepts
+      profile: {
+        provider,
+        model,
+        credentialId,
+        systemPrompt: cfg?.systemPrompt ?? current.systemPrompt ?? '',
+        maxModelCalls: cfg?.maxModelCalls ?? current.maxModelCalls ?? 24,
+        maxToolCalls: cfg?.maxToolCalls ?? current.maxToolCalls ?? 32,
+        maxOutputTokens: cfg?.maxOutputTokens ?? current.maxOutputTokens ?? 2048,
+        maxDurationSeconds: cfg?.maxDurationSeconds ?? current.maxDurationSeconds ?? 1800,
+        concurrency: cfg?.concurrency ?? current.concurrency ?? 2,
+        grants: {
+          editGraph: Boolean(g.editGraph),
+          executeCode: Boolean(g.executeCode),
+          webSearch: Boolean(g.webSearch),
+          teams: Boolean(g.teams),
+          externalEffects: Boolean(g.externalEffects),
+          executeNodes: Array.isArray(g.executeNodes) ? g.executeNodes : [],
+          credentialIds: Array.isArray(g.credentialIds) ? g.credentialIds : [],
+          variableNames: Array.isArray(g.variableNames) ? g.variableNames : [],
+        },
+      },
+    };
 
     const res = await this.authFetch(session, `${apiBaseUrl}/api/agents/profile`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${session.accessToken}`,
-        'x-workspace-id': session.workspaceId || 'ws_default',
-      },
-      body: JSON.stringify({
-        workflowId: cleanWfId,
-        profile: {
-          ...profile.config,
-          grants: profile.grants,
-        },
-      }),
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || 'Falha ao guardar configurações do agente.');
+    const data = await res.json().catch(() => ({} as any));
+    if (!res.ok || data?.success === false) {
+      // Surface the server's real error (API returns { success:false, error })
+      const msg = data?.error || data?.message || 'Falha ao guardar configurações do agente.';
+      throw new Error(`${msg} (HTTP ${res.status})`);
     }
   }
 
