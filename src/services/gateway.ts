@@ -1028,7 +1028,7 @@ class RealCellGateway implements CellGateway {
     // 2. Direct Supabase fallback
     try {
       const sbRes = await this.authFetch(session, 
-        `${supabaseUrl}/rest/v1/cells_credentials?provider=eq.variable&select=id,name,created_at&order=created_at.desc`,
+        `${supabaseUrl}/rest/v1/cells_variables?select=id,key,value,is_secret,created_at&order=created_at.desc`,
         {
           headers: {
             apikey: supabaseAnonKey,
@@ -1041,9 +1041,10 @@ class RealCellGateway implements CellGateway {
         if (Array.isArray(sbData) && sbData.length > 0) {
           return sbData.map((v: any) => ({
             id: String(v.id),
-            name: String(v.name),
-            key: String(v.name),
-            maskedValue: '••••••••',
+            name: String(v.key),
+            key: String(v.key),
+            // Never display secret values; RLS already hides secret rows.
+            maskedValue: v.is_secret || v.value == null ? '••••••••' : String(v.value),
             created_at: v.created_at,
           }));
         }
@@ -1165,7 +1166,7 @@ class RealCellGateway implements CellGateway {
     // 2. Direct Supabase fallback via cells_executions
     try {
       const sbRes = await this.authFetch(session, 
-        `${supabaseUrl}/rest/v1/cells_executions?select=id,workflow_id,status,trigger_type,created_at,error_message&order=created_at.desc&limit=50`,
+        `${supabaseUrl}/rest/v1/cells_executions?select=id,workflow_id,status,trigger_type,started_at,error_message&order=started_at.desc.nullslast&limit=50`,
         {
           headers: {
             apikey: supabaseAnonKey,
@@ -1193,7 +1194,7 @@ class RealCellGateway implements CellGateway {
               title: `Execução ${ex.workflow_id ? ex.workflow_id.slice(0, 14) : 'Manual'}`,
               subtitle: ex.error_message ? `Falha: ${ex.error_message}` : `Estado: ${ex.status}`,
               kind,
-              createdAt: ex.created_at || now(),
+              createdAt: ex.started_at || now(),
               agentId: ex.workflow_id,
             };
           });
