@@ -18,11 +18,14 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { SmartUiView } from '../components/blocks/SmartBlocks';
+import { buildInteractionMessage } from '../services/smartui';
+import { loadUiAnswers, saveUiAnswer } from '../services/uiAnswers';
 import { ModelPicker } from '../components/ModelPicker';
 import { defaultModelFor, isKnownModel } from '../services/models';
 import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
 import { C, R } from '../theme';
 import type {
+  UiAnswer,
   Agent,
   AgentConfig,
   AgentGrants,
@@ -175,9 +178,13 @@ function ThinkingBubble({ agentName }: { agentName: string }) {
 function MessageBubble({
   item,
   agentName,
+  answers,
+  onInteract,
 }: {
   item: AgentMessage;
   agentName: string;
+  answers?: Record<string, UiAnswer>;
+  onInteract?: (key: string, blockId: string, answer: UiAnswer) => Promise<void>;
 }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(6)).current;
@@ -281,7 +288,9 @@ function MessageBubble({
           {item.content}
         </Txt>
 
-        {!isUser && item.ui && item.ui.blocks.length > 0 && <SmartUiView ui={item.ui} />}
+        {!isUser && item.ui && item.ui.blocks.length > 0 && (
+          <SmartUiView ui={item.ui} answers={answers} onInteract={onInteract} />
+        )}
 
         {item.attachments && item.attachments.length > 0 && (
           <View style={{ marginTop: 7, gap: 4 }}>
@@ -344,6 +353,17 @@ function MessageBubble({
 }
 
 export function ChatScreen(props: Props) {
+  const [uiAnswers, setUiAnswers] = useState<Record<string, UiAnswer>>({});
+  useEffect(() => {
+    loadUiAnswers().then(setUiAnswers).catch(() => {});
+  }, []);
+  const handleInteract = async (key: string, blockId: string, answer: UiAnswer) => {
+    if (uiAnswers[key]) return; // already answered
+    // Lock immediately (prevents double submits), then send as a new run in this chat
+    setUiAnswers((prev) => ({ ...prev, [key]: answer }));
+    saveUiAnswer(key, answer).catch(() => {});
+    await props.onSend(buildInteractionMessage(answer.summary, blockId, answer.action, answer.values));
+  };
   const [creationOpen, setCreationOpen] = useState(false);
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentName, setAgentName] = useState('');
@@ -783,7 +803,10 @@ export function ChatScreen(props: Props) {
         data={props.messages}
         keyExtractor={(m) => m.id}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => <MessageBubble item={item} agentName={agent.name} />}
+        renderItem={({ item }) => (
+          <MessageBubble item={item} agentName={agent.name} answers={uiAnswers} onInteract={handleInteract} />
+        )}
+        extraData={uiAnswers}
         ListFooterComponent={
           props.busy ? <ThinkingBubble agentName={agent.name} /> : <View style={{ height: 11 }} />
         }

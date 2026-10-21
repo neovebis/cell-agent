@@ -68,6 +68,20 @@ export interface AgentMessage {
 }
 
 export type UiTone = 'up' | 'down' | 'flat';
+export interface UiFormField {
+  name: string;
+  label: string;
+  kind: 'text' | 'number' | 'select' | 'toggle';
+  options?: string[];
+  required?: boolean;
+  placeholder?: string;
+}
+/** A submitted answer to an interactive block (persisted locally so the block stays locked). */
+export interface UiAnswer {
+  action: string;
+  values: Record<string, unknown>;
+  summary: string;
+}
 export type UiBlock =
   | { type: 'prose'; text: string }
   | { type: 'callout'; title?: string; text: string }
@@ -81,6 +95,10 @@ export type UiBlock =
   | { type: 'bars'; title?: string; unit?: string; items: { label: string; value: number; note?: string }[] }
   | { type: 'steps'; title?: string; items: { title: string; detail?: string }[] }
   | { type: 'checklist'; title?: string; items: { label: string; done?: boolean }[] }
+  | { type: 'chart'; title?: string; kind: 'bar' | 'line' | 'area' | 'pie'; xKey: string; series: { key: string; label: string }[]; data: Record<string, string | number>[] }
+  | { type: 'choices'; id: string; title?: string; multi?: boolean; submit?: string; options: { id: string; label: string }[] }
+  | { type: 'confirm'; id: string; title?: string; text: string; approve?: string; reject?: string; tone?: 'danger' }
+  | { type: 'form'; id: string; title?: string; submit?: string; fields: UiFormField[] }
   | {
       type: 'timeline';
       title?: string;

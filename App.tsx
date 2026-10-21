@@ -24,6 +24,7 @@ import { ProfileScreen } from './src/screens/Profile';
 import { gateway } from './src/services/gateway';
 import { enableNotifications } from './src/services/notifications';
 import { forgetSession, loadSession, saveSession } from './src/services/session';
+import { stripUiInstruction } from './src/services/smartui';
 import { C } from './src/theme';
 import type {
   ActivityItem,
@@ -243,7 +244,7 @@ function Root() {
       id: optimisticId,
       agentId: activeAgent.id,
       role: 'user',
-      content,
+      content: stripUiInstruction(content),
       createdAt: new Date().toISOString(),
       status: 'sent',
       attachments: attachment ? [{ name: attachment.name, mimeType: attachment.mimeType }] : undefined,

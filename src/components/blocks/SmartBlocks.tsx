@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Icon, Txt } from '../UI';
 import { C } from '../../theme';
-import type { SmartUi, UiBlock } from '../../types';
+import type { SmartUi, UiAnswer, UiBlock } from '../../types';
+import { answerKey } from '../../services/smartui';
+import { ChartView } from './SmartCharts';
+import { ChoicesView, ConfirmView, FormView, type InteractFn } from './SmartInteractive';
 
 const box = { backgroundColor: C.white, borderColor: C.border, borderWidth: 1, borderRadius: 16, padding: 11 } as const;
 
@@ -155,8 +158,16 @@ function Timeline({ b }: { b: Extract<UiBlock, { type: 'timeline' }> }) {
   );
 }
 
-function Block({ b }: { b: UiBlock }) {
+function Block({ b, answer, onInteract }: { b: UiBlock; answer?: UiAnswer; onInteract?: InteractFn }) {
   switch (b.type) {
+    case 'chart':
+      return <ChartView b={b} />;
+    case 'choices':
+      return <ChoicesView b={b} answer={answer} onInteract={onInteract} />;
+    case 'confirm':
+      return <ConfirmView b={b} answer={answer} onInteract={onInteract} />;
+    case 'form':
+      return <FormView b={b} answer={answer} onInteract={onInteract} />;
     case 'prose':
       return <Txt size={12} style={{ lineHeight: 18 }}>{b.text}</Txt>;
     case 'callout':
@@ -184,7 +195,17 @@ function Block({ b }: { b: UiBlock }) {
 }
 
 /** Renders a sanitized SmartUi below an assistant message. */
-export function SmartUiView({ ui }: { ui: SmartUi }) {
+export function SmartUiView({
+  ui,
+  answers,
+  onInteract,
+}: {
+  ui: SmartUi;
+  /** Persisted answers keyed by answerKey(ui, blockId). */
+  answers?: Record<string, UiAnswer>;
+  /** Called with the answer key so the parent can persist and send it. */
+  onInteract?: (key: string, blockId: string, answer: UiAnswer) => Promise<void>;
+}) {
   return (
     <View style={{ marginTop: 8, gap: 8 }}>
       {(!!ui.kicker || !!ui.title) && (
@@ -193,9 +214,18 @@ export function SmartUiView({ ui }: { ui: SmartUi }) {
           {!!ui.title && <Txt size={15} weight="700">{ui.title}</Txt>}
         </View>
       )}
-      {ui.blocks.map((b, i) => (
-        <Block key={i} b={b} />
-      ))}
+      {ui.blocks.map((b, i) => {
+        const id = 'id' in b ? b.id : undefined;
+        const key = id ? answerKey(ui, id) : '';
+        return (
+          <Block
+            key={i}
+            b={b}
+            answer={id ? answers?.[key] : undefined}
+            onInteract={id && onInteract ? (blockId, answer) => onInteract(key, blockId, answer) : undefined}
+          />
+        );
+      })}
     </View>
   );
 }

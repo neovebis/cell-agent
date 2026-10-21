@@ -751,7 +751,8 @@ class RealCellGateway implements CellGateway {
       id: uid(),
       agentId,
       role: 'user',
-      content,
+      // Hidden interaction payloads are sent to the agent but never shown
+      content: stripUiInstruction(content),
       createdAt: now(),
       status: 'sent',
       attachments: attachments?.map((a) => ({ name: a.name, mimeType: a.mimeType })),

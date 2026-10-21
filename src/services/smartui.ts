@@ -7,11 +7,15 @@ import type { SmartUi, UiBlock, UiTone } from '../types';
 
 export const UI_INSTRUCTION_START = '[[CELL_UI_FORMAT]]';
 export const UI_INSTRUCTION_END = '[[/CELL_UI_FORMAT]]';
+export const INTERACTION_START = '[[CELL_UI_INTERACTION]]';
+export const INTERACTION_END = '[[/CELL_UI_INTERACTION]]';
 
 export const UI_INSTRUCTION = `${UI_INSTRUCTION_START}
-Formato opcional da resposta (app móvel CELL). Só quando ajudar (dados, listas, passos, comparações), responde APENAS com JSON:
-{"reply":"texto curto","ui":{"v":1,"title":"","summary":"","blocks":[...]}}
-Blocos: {"type":"prose","text":""} {"type":"callout","title":"","text":""} {"type":"kpis","items":[{"label":"","value":"","delta":"+4%","tone":"up|down|flat"}]} {"type":"table","columns":[{"key":"a","label":"A","align":"left|right"}],"rows":[{"a":""}]} {"type":"bars","unit":"%","items":[{"label":"","value":0}]} {"type":"steps","items":[{"title":"","detail":""}]} {"type":"checklist","items":[{"label":"","done":false}]} {"type":"timeline","events":[{"when":"","title":"","state":"done|now|next"}]}
+Formato opcional (app móvel CELL). Só quando ajudar, responde APENAS com JSON:
+{"reply":"texto curto","ui":{"v":1,"title":"","blocks":[...]}}
+Blocos: prose{text} callout{title,text} kpis{items:[{label,value,delta,tone:up|down|flat}]} table{columns:[{key,label}],rows:[{}]} bars{unit,items:[{label,value}]} steps{items:[{title,detail}]} checklist{items:[{label,done}]} timeline{events:[{when,title,state:done|now|next}]} chart{kind:bar|line|area|pie,xKey,series:[{key,label}],data:[{}]}
+Interativos (só se precisares de decisão/dados do utilizador; "id" único): choices{id,multi,options:[{id,label}]} confirm{id,text,approve,reject,tone:"danger"} form{id,submit,fields:[{name,label,kind:text|number|select|toggle,options,required}]}
+A resposta do utilizador chega como ${INTERACTION_START}{"blockId","action","values"}${INTERACTION_END}.
 Máx. 6 blocos, sem URLs nem HTML. Caso contrário responde em texto normal.
 ${UI_INSTRUCTION_END}`;
 
@@ -21,12 +25,43 @@ export function withUiInstruction(message: string): string {
 }
 
 /** Removes the instruction block from a message (for history shown to the user). */
+function stripBetween(message: string, start: string, end: string): string {
+  let out = message;
+  for (let guard = 0; guard < 5; guard++) {
+    const i = out.indexOf(start);
+    if (i < 0) break;
+    const j = out.indexOf(end, i);
+    out = out.slice(0, i) + (j < 0 ? '' : out.slice(j + end.length));
+  }
+  return out;
+}
+
+/** Removes the hidden format and interaction blocks (for what the user sees). */
 export function stripUiInstruction(message: string): string {
-  const i = message.indexOf(UI_INSTRUCTION_START);
-  if (i < 0) return message;
-  const j = message.indexOf(UI_INSTRUCTION_END, i);
-  const tail = j < 0 ? '' : message.slice(j + UI_INSTRUCTION_END.length);
-  return (message.slice(0, i) + tail).trimEnd();
+  if (!message.includes('[[CELL_UI_')) return message;
+  return stripBetween(stripBetween(message, UI_INSTRUCTION_START, UI_INSTRUCTION_END), INTERACTION_START, INTERACTION_END).trim();
+}
+
+/** Readable summary + hidden machine-readable interaction payload for the agent. */
+export function buildInteractionMessage(summary: string, blockId: string, action: string, values: Record<string, unknown>): string {
+  return `${summary}\n\n${INTERACTION_START}${JSON.stringify({ blockId, action, values })}${INTERACTION_END}`;
+}
+
+/** Extracts the interaction payload from a message (used by tests / future features). */
+export function parseInteraction(message: string): { blockId: string; action: string; values: Record<string, unknown> } | null {
+  const i = message.indexOf(INTERACTION_START);
+  const j = message.indexOf(INTERACTION_END, i);
+  if (i < 0 || j < 0) return null;
+  const o = obj(tryJson(message.slice(i + INTERACTION_START.length, j)));
+  return typeof o.blockId === 'string' && typeof o.action === 'string' ? { blockId: o.blockId, action: o.action, values: obj(o.values) } : null;
+}
+
+/** Stable key for persisting an answer: block id + hash of the ui content. */
+export function answerKey(ui: SmartUi, blockId: string): string {
+  const str = JSON.stringify(ui.blocks);
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return `${blockId}:${(h >>> 0).toString(36)}`;
 }
 
 const MAX_BLOCKS = 8;
@@ -54,8 +89,9 @@ const obj = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 const tone = (v: unknown): UiTone | undefined => (v === 'up' || v === 'down' || v === 'flat' ? v : undefined);
 
-function block(raw: unknown): UiBlock | null {
+function block(raw: unknown, index = 0): UiBlock | null {
   const o = obj(raw);
+  const id = clean(o.id, 40).replace(/[^\w-]/g, '') || `b${index}`;
   const title = opt(o.title);
   switch (o.type) {
     case 'prose': {
@@ -148,6 +184,72 @@ function block(raw: unknown): UiBlock | null {
         .filter(<T,>(x: T | null): x is T => x !== null);
       return events.length ? { type: 'timeline', title, events } : null;
     }
+    case 'chart': {
+      const kind = o.kind === 'line' || o.kind === 'area' || o.kind === 'pie' ? o.kind : o.kind === 'bar' ? 'bar' : null;
+      const xKey = clean(o.xKey, 40);
+      const series = arr(o.series)
+        .slice(0, 4)
+        .map((x) => {
+          const so = obj(x);
+          const key = clean(so.key, 40);
+          return key ? { key, label: clean(so.label, 40) || key } : null;
+        })
+        .filter(<T,>(x: T | null): x is T => x !== null);
+      if (!kind || !xKey || !series.length) return null;
+      const data = arr(o.data)
+        .slice(0, 24)
+        .map((r) => {
+          const ro = obj(r);
+          const row: Record<string, string | number> = { [xKey]: clean(ro[xKey], 24) };
+          for (const sr of series) row[sr.key] = num(ro[sr.key]) ?? 0;
+          return row;
+        })
+        .filter((r) => r[xKey] !== '');
+      return data.length ? { type: 'chart', title, kind, xKey, series: kind === 'pie' ? series.slice(0, 1) : series, data } : null;
+    }
+    case 'choices': {
+      const options = arr(o.options)
+        .slice(0, 10)
+        .map((x, i) => {
+          if (typeof x === 'string') return clean(x, 60) ? { id: `o${i}`, label: clean(x, 60) } : null;
+          const xo = obj(x);
+          const label = clean(xo.label, 60);
+          return label ? { id: clean(xo.id, 40) || `o${i}`, label } : null;
+        })
+        .filter(<T,>(x: T | null): x is T => x !== null);
+      return options.length ? { type: 'choices', id, title, multi: o.multi === true, submit: opt(o.submit, 24), options } : null;
+    }
+    case 'confirm': {
+      const text = clean(o.text, 300) || title || '';
+      return text
+        ? { type: 'confirm', id, title: o.text ? title : undefined, text, approve: opt(o.approve, 24), reject: opt(o.reject, 24), tone: o.tone === 'danger' ? 'danger' : undefined }
+        : null;
+    }
+    case 'form': {
+      const seen = new Set<string>();
+      const fields = arr(o.fields)
+        .slice(0, 8)
+        .map((x) => {
+          const f = obj(x);
+          const name = clean(f.name, 40).replace(/[^\w-]/g, '');
+          const label = clean(f.label, 60) || name;
+          if (!name || seen.has(name)) return null;
+          seen.add(name);
+          const kind = f.kind === 'number' || f.kind === 'select' || f.kind === 'toggle' ? f.kind : 'text';
+          const options = arr(f.options).slice(0, 12).map((v) => clean(v, 40)).filter(Boolean);
+          if (kind === 'select' && !options.length) return null;
+          return {
+            name,
+            label,
+            kind: kind as 'text' | 'number' | 'select' | 'toggle',
+            options: kind === 'select' ? options : undefined,
+            required: f.required === true,
+            placeholder: opt(f.placeholder, 60),
+          };
+        })
+        .filter(<T,>(x: T | null): x is T => x !== null);
+      return fields.length ? { type: 'form', id, title, submit: opt(o.submit, 24), fields } : null;
+    }
     default:
       return null;
   }
@@ -164,8 +266,12 @@ export function sanitizeUi(raw: unknown): SmartUi | null {
       const nested =
         ob.type === 'columns' ? arr(ob.blocks) : ob.type === 'app' ? arr(ob.screens).flatMap((s) => arr(obj(s).blocks)) : [b];
       for (const n of nested) {
-        const leaf = block(n);
-        if (leaf) blocks.push(leaf);
+        const leaf = block(n, blocks.length);
+        if (leaf) {
+          // Interactive block ids must be unique within the message
+          if ('id' in leaf && blocks.some((x) => 'id' in x && x.id === leaf.id)) leaf.id = `${leaf.id}_${blocks.length}`;
+          blocks.push(leaf);
+        }
         if (blocks.length >= MAX_BLOCKS) break;
       }
       if (blocks.length >= MAX_BLOCKS) break;
