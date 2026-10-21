@@ -5,8 +5,8 @@ on:
     branches:
       - main
       - master
-    tags:
-      - 'v*'
+      - 'fix/**'
+      - 'release/**'
   workflow_dispatch:
 
 permissions:
@@ -61,9 +61,9 @@ jobs:
             export STORE_PASS="${{ secrets.KEYSTORE_PASSWORD }}"
             export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
           else
-            echo "Generating self-signed release keystore for standalone APK"
+            echo "Generating self-signed release keystore for standalone APK (RSA 2048, SHA256withRSA)"
             keytool -genkeypair -v -storetype PKCS12 -keystore android/app/release.keystore \
-              -alias cellagent -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias cellagent -keyalg RSA -keysize 2048 -sigalg SHA256withRSA -validity 10000 \
               -dname "CN=CELL AGENT, OU=Mobile, O=CellSystem, L=Luanda, S=Luanda, C=AO" \
               -storepass cellagent123 -keypass cellagent123
             export KEY_ALIAS="cellagent"
@@ -81,46 +81,73 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon || ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Prepare APK Output
+      - name: Verify and Validate Release APK
         run: |
-          mkdir -p build-output
-          APK_FOUND=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          if [ -n "$APK_FOUND" ]; then
-            echo "APK generated successfully: $APK_FOUND"
-            cp "$APK_FOUND" build-output/cell-agent-mobile-v0.2.1.apk
-            ls -la build-output/
-          else
-            echo "Error: No APK file was generated!"
+          RELEASE_APK="android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$RELEASE_APK" ]; then
+            echo "FATAL: Release APK not found at $RELEASE_APK!"
+            echo "Directory contents:"
+            ls -la android/app/build/outputs/apk/release/ || true
             exit 1
           fi
+
+          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          echo "Using Android build tools from $BUILD_TOOLS_DIR"
+
+          echo "=== 1. ZIPALIGN VERIFICATION ==="
+          "$BUILD_TOOLS_DIR/zipalign" -c -v 4 "$RELEASE_APK"
+
+          echo "=== 2. APKSIGNER VERIFICATION ==="
+          "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$RELEASE_APK"
+
+          echo "=== 3. AAPT2 BADGING & MANIFEST INSPECTION ==="
+          "$BUILD_TOOLS_DIR/aapt2" dump badging "$RELEASE_APK" | head -n 35
+
+          echo "=== 4. INTEGRITY & CHECKSUM ==="
+          sha256sum "$RELEASE_APK"
+
+          mkdir -p build-output
+          cp "$RELEASE_APK" build-output/cell-agent-mobile-v0.2.2.apk
+          sha256sum build-output/cell-agent-mobile-v0.2.2.apk > build-output/cell-agent-mobile-v0.2.2.apk.sha256
+          ls -lh build-output/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cell-agent-mobile-v0.2.1-apk
-          path: build-output/*.apk
+          name: cell-agent-mobile-v0.2.2-apk
+          path: build-output/
           retention-days: 30
 
       - name: Publish GitHub Release
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_FILE="build-output/cell-agent-mobile-v0.2.1.apk"
+          APK_FILE="build-output/cell-agent-mobile-v0.2.2.apk"
+          SHA_FILE="build-output/cell-agent-mobile-v0.2.2.apk.sha256"
           if [ -f "$APK_FILE" ]; then
             echo "Publishing release with APK: $APK_FILE"
-            if gh release view v0.2.1 >/dev/null 2>&1; then
-              gh release upload v0.2.1 "$APK_FILE" --clobber
+            if gh release view v0.2.2 >/dev/null 2>&1; then
+              gh release upload v0.2.2 "$APK_FILE" "$SHA_FILE" --clobber
             else
-              gh release create v0.2.1 "$APK_FILE" \
-                --title "CELL AGENT Mobile v0.2.1" \
-                --notes "### CELL AGENT Mobile v0.2.1
+              cat << 'EOF' > release_notes.md
+              ### CELL AGENT Mobile v0.2.2 - Correcao Definitiva de Instalacao APK
 
-          Compilação restaurada para o método exato da v0.1.8 com todas as novas funcionalidades:
-          - Menu de Ações flutuante suspenso com cantos arredondados (Criar missão, Câmara, Imagem ou vídeo, Ficheiros, Capture e Plugins).
-          - Animação elegante do botão '+' rodando 45 graus para 'x'.
-          - Opção de copiar mensagem ao tocar na mensagem do utilizador.
-          - Cartão 'Avançado' no fim do Perfil abrindo modal dedicada com Cofre, Segurança e Endpoints."
+              Correcao comprovada de empacotamento, assinatura e compatibilidade Android:
+              - Assinatura release v1 (JAR signing) e v2 (APK Signature Scheme) ativadas e validadas.
+              - Correcao do script de injecao Gradle para mapear de forma robusta o bloco release.
+              - Remocao de fallback silencioso para debug e validacao estrita no CI (zipalign 4-byte e apksigner).
+              - VersionCode explicito (5) e incremento de versao (0.2.2).
+              - Todas as funcionalidades e design preservados:
+                - Menu de Acoes flutuante suspenso com cantos arredondados (Criar missao, Camara, Imagem ou video, Ficheiros, Capture e Plugins).
+                - Animacao elegante do botao '+' rodando 45 graus para 'x'.
+                - Opcao de copiar mensagem ao tocar na mensagem do utilizador.
+                - Cartao 'Avancado' no fim do Perfil abrindo modal dedicada com Cofre, Seguranca e Endpoints.
+              EOF
+              gh release create v0.2.2 "$APK_FILE" "$SHA_FILE" \
+                --title "CELL AGENT Mobile v0.2.2" \
+                --notes-file release_notes.md
             fi
           fi
