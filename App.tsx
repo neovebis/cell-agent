@@ -379,6 +379,16 @@ function Root() {
     setTab('Chat');
   };
 
+  useEffect(() => {
+    gateway.onSessionExpired = () => {
+      logout().catch(() => {});
+      notify('Sessão expirada. Inicia sessão novamente.');
+    };
+    return () => {
+      gateway.onSessionExpired = undefined;
+    };
+  });
+
   const doNotifications = async () => {
     try {
       notify(await enableNotifications(gateway, session ?? undefined));
