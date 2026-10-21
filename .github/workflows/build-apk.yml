@@ -132,19 +132,22 @@ jobs:
             if gh release view v0.2.2 >/dev/null 2>&1; then
               gh release upload v0.2.2 "$APK_FILE" "$SHA_FILE" --clobber
             else
+              cat << 'EOF' > release_notes.md
+              ### CELL AGENT Mobile v0.2.2 - Correcao Definitiva de Instalacao APK
+
+              Correcao comprovada de empacotamento, assinatura e compatibilidade Android:
+              - Assinatura release v1 (JAR signing) e v2 (APK Signature Scheme) ativadas e validadas.
+              - Correcao do script de injecao Gradle para mapear de forma robusta o bloco release.
+              - Remocao de fallback silencioso para debug e validacao estrita no CI (zipalign 4-byte e apksigner).
+              - VersionCode explicito (5) e incremento de versao (0.2.2).
+              - Todas as funcionalidades e design preservados:
+                - Menu de Acoes flutuante suspenso com cantos arredondados (Criar missao, Camara, Imagem ou video, Ficheiros, Capture e Plugins).
+                - Animacao elegante do botao '+' rodando 45 graus para 'x'.
+                - Opcao de copiar mensagem ao tocar na mensagem do utilizador.
+                - Cartao 'Avancado' no fim do Perfil abrindo modal dedicada com Cofre, Seguranca e Endpoints.
+              EOF
               gh release create v0.2.2 "$APK_FILE" "$SHA_FILE" \
                 --title "CELL AGENT Mobile v0.2.2" \
-                --notes "### CELL AGENT Mobile v0.2.2 - Correcao Definitiva de Instalacao APK
-
-Correcao comprovada de empacotamento, assinatura e compatibilidade Android:
-- Assinatura release v1 (JAR signing) e v2 (APK Signature Scheme) ativadas e validadas.
-- Correcao do script de injecao Gradle para mapear de forma robusta o bloco release.
-- Remocao de fallback silencioso para debug e validacao estrita no CI (zipalign 4-byte e apksigner).
-- VersionCode explicito (5) e incremento de versao (0.2.2).
-- Todas as funcionalidades e design preservados:
-  - Menu de Acoes flutuante suspenso com cantos arredondados (Criar missao, Camara, Imagem ou video, Ficheiros, Capture e Plugins).
-  - Animacao elegante do botao '+' rodando 45 graus para 'x'.
-  - Opcao de copiar mensagem ao tocar na mensagem do utilizador.
-  - Cartao 'Avancado' no fim do Perfil abrindo modal dedicada com Cofre, Seguranca e Endpoints."
+                --notes-file release_notes.md
             fi
           fi
