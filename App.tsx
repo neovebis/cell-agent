@@ -56,16 +56,16 @@ function Login({
       contentContainerStyle={{
         flexGrow: 1,
         justifyContent: 'center',
-        padding: 30,
+        padding: 26,
         backgroundColor: C.white,
       }}
       keyboardShouldPersistTaps="handled"
     >
-      <View style={{ alignItems: 'center', marginBottom: 35 }}>
-        <AgentAvatar size={86} />
+      <View style={{ alignItems: 'center', marginBottom: 31 }}>
+        <AgentAvatar size={76} />
       </View>
       <PageTitle kicker="A tua conta do CELL SYSTEM" title="Bem-vindo" />
-      <Txt color={C.muted} size={14} style={{ marginBottom: 28, lineHeight: 20 }}>
+      <Txt color={C.muted} size={12} style={{ marginBottom: 25, lineHeight: 18 }}>
         Inicia sessão com as credenciais do teu espaço. Os teus fluxos, agentes e permissões serão
         sincronizados em tempo real.
       </Txt>
@@ -83,7 +83,7 @@ function Login({
         placeholder="Palavra-passe"
         value={password}
         onChangeText={setPassword}
-        style={[styles.input, { marginTop: 12 }]}
+        style={[styles.input, { marginTop: 11 }]}
         placeholderTextColor={C.muted}
       />
       <Pressable
@@ -93,7 +93,7 @@ function Login({
       >
         {busy ? <ActivityIndicator color={C.white} /> : <Txt color={C.white} weight="700">Entrar</Txt>}
       </Pressable>
-      <Txt color={C.muted} size={11} style={{ marginTop: 20, lineHeight: 18 }}>
+      <Txt color={C.muted} size={10} style={{ marginTop: 18, lineHeight: 16 }}>
         Autenticação direta e segura via Supabase Auth com encriptação TLS de ponta a ponta.
       </Txt>
     </ScrollView>
@@ -505,14 +505,14 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface,
     borderWidth: 1,
     borderColor: C.border,
-    minHeight: 58,
-    paddingHorizontal: 19,
-    fontSize: 16,
+    minHeight: 51,
+    paddingHorizontal: 17,
+    fontSize: 14,
     color: C.ink,
   },
   loginButton: {
-    marginTop: 22,
-    height: 56,
+    marginTop: 19,
+    height: 49,
     borderRadius: 50,
     backgroundColor: C.ink,
     alignItems: 'center',
