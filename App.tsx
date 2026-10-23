@@ -14,7 +14,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { BottomNav } from './src/components/BottomNav';
-import { AgentAvatar } from './src/components/AgentAvatar';
+import { LiveMotion } from './src/components/LiveMotion';
 import { PageTitle, Txt } from './src/components/UI';
 import { ActivityScreen } from './src/screens/Activity';
 import { CaptureScreen } from './src/screens/Capture';
@@ -29,6 +29,7 @@ import type {
   ActivityItem,
   Agent,
   AgentConfig,
+  AgentAvatarChoice,
   AgentGrants,
   AgentMessage,
   CaptureItem,
@@ -62,7 +63,7 @@ function Login({
       keyboardShouldPersistTaps="handled"
     >
       <View style={{ alignItems: 'center', marginBottom: 35 }}>
-        <AgentAvatar size={86} />
+        <LiveMotion size={86} shape="circle" colorId="black" />
       </View>
       <PageTitle kicker="A tua conta do CELL SYSTEM" title="Bem-vindo" />
       <Txt color={C.muted} size={14} style={{ marginBottom: 28, lineHeight: 20 }}>
@@ -260,9 +261,9 @@ function Root() {
     }
   };
 
-  const createAgent = async (name: string, description: string) => {
+  const createAgent = async (name: string, description: string, avatar?: AgentAvatarChoice) => {
     try {
-      const agent = await gateway.createAgent(name, description, session ?? undefined);
+      const agent = await gateway.createAgent(name, description, session ?? undefined, avatar);
       setAgents((prev) => [agent, ...prev]);
       if (session && agent.workspaceId && session.workspaceId !== agent.workspaceId) {
         const updated = { ...session, workspaceId: agent.workspaceId };

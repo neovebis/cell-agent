@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import type {
   ActivityItem,
   Agent,
+  AgentAvatarChoice,
   AgentMessage,
   AgentProfile,
   CaptureItem,
@@ -35,6 +36,16 @@ const now = () => new Date().toISOString();
 
 const CAPTURES_STORAGE_KEY = 'cell_mobile_captures_store_v2';
 const MESSAGES_STORAGE_KEY = 'cell_mobile_messages_store_v2';
+
+const AVATAR_SHAPES = ['circle', 'heart', 'diamond', 'spade', 'club'];
+const AVATAR_COLORS = ['black', 'turquoise', 'cyan', 'neonBlue', 'lilac', 'lightPurple'];
+
+/** Lê o avatar Motion (forma + cor) guardado no nó do agente, se existir. */
+function readAvatar(node: any): AgentAvatarChoice | undefined {
+  const a = node?.avatar;
+  if (!a || !AVATAR_SHAPES.includes(a.shape) || !AVATAR_COLORS.includes(a.color)) return undefined;
+  return { shape: a.shape, color: a.color } as AgentAvatarChoice;
+}
 
 class RealCellGateway implements CellGateway {
   demo = false as const;
@@ -315,6 +326,7 @@ class RealCellGateway implements CellGateway {
                 workspaceId: String(w.workspace_id || ''),
                 createdAt: w.created_at,
                 updatedAt: w.updated_at,
+                avatar: readAvatar(node),
                 config: node.config
                   ? {
                       provider: node.config.provider || 'google',
@@ -344,6 +356,7 @@ class RealCellGateway implements CellGateway {
                   workspaceId: String(w.workspace_id || ''),
                   createdAt: w.created_at,
                   updatedAt: w.updated_at,
+                  avatar: readAvatar(node),
                   config: node.config
                     ? {
                         provider: node.config.provider || 'google',
@@ -390,7 +403,12 @@ class RealCellGateway implements CellGateway {
     return [];
   }
 
-  async createAgent(name: string, description: string, session?: Session): Promise<Agent> {
+  async createAgent(
+    name: string,
+    description: string,
+    session?: Session,
+    avatar?: AgentAvatarChoice
+  ): Promise<Agent> {
     if (!session?.accessToken) {
       throw new Error('Sessão necessária para criar agentes.');
     }
@@ -440,6 +458,7 @@ class RealCellGateway implements CellGateway {
             id: agentNodeId,
             type: 'agent',
             title: trimmedName,
+            ...(avatar ? { avatar: { kind: 'motion', shape: avatar.shape, color: avatar.color } } : {}),
             x: 350,
             y: 280,
             config: {
@@ -559,6 +578,7 @@ class RealCellGateway implements CellGateway {
       createdAt: payload.created_at,
       updatedAt: payload.updated_at,
       config: payload.graph.nodes[0].config,
+      avatar,
     };
   }
 

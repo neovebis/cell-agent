@@ -17,10 +17,14 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { AgentAvatar } from '../components/AgentAvatar';
+import { LiveMotion } from '../components/LiveMotion';
 import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
+import { BODY_SHAPES } from '../motion/Motion';
+import { PALETTE } from '../motion/core/palette';
 import { C, R } from '../theme';
 import type {
   Agent,
+  AgentAvatarChoice,
   AgentConfig,
   AgentGrants,
   AgentMessage,
@@ -37,7 +41,7 @@ type Props = {
   captures?: CaptureItem[];
   onOpen: (agent: Agent) => void;
   onBack: () => void;
-  onNew: (name: string, description: string) => void;
+  onNew: (name: string, description: string, avatar?: AgentAvatarChoice) => Promise<void> | void;
   onSend: (content: string, attachment?: FileAttachment) => Promise<void>;
   onRefresh: () => void;
   onError: (message: string) => void;
@@ -53,7 +57,13 @@ const TEMPERATURES = [
 ];
 const MAX_LOOPS = [16, 24, 32, 48];
 
-function ThinkingBubble({ agentName }: { agentName: string }) {
+function ThinkingBubble({
+  agentName,
+  avatar,
+}: {
+  agentName: string;
+  avatar?: AgentAvatarChoice;
+}) {
   const dot1 = useRef(new Animated.Value(0.25)).current;
   const dot2 = useRef(new Animated.Value(0.25)).current;
   const dot3 = useRef(new Animated.Value(0.25)).current;
@@ -96,7 +106,11 @@ function ThinkingBubble({ agentName }: { agentName: string }) {
   return (
     <View style={{ alignItems: 'flex-start', marginTop: 4, marginBottom: 14 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 7, paddingLeft: 4 }}>
-        <AgentAvatar size={20} />
+        <LiveMotion
+          size={20}
+          shape={avatar?.shape ?? 'circle'}
+          colorId={avatar?.color ?? 'black'}
+        />
         <Txt size={12} weight="600" color={C.muted}>
           {agentName}
         </Txt>
@@ -172,9 +186,11 @@ function ThinkingBubble({ agentName }: { agentName: string }) {
 function MessageBubble({
   item,
   agentName,
+  avatar,
 }: {
   item: AgentMessage;
   agentName: string;
+  avatar?: AgentAvatarChoice;
 }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(6)).current;
@@ -236,7 +252,11 @@ function MessageBubble({
     >
       {!isUser && (
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 7, paddingLeft: 4 }}>
-          <AgentAvatar size={20} />
+          <LiveMotion
+            size={20}
+            shape={avatar?.shape ?? 'circle'}
+            colorId={avatar?.color ?? 'black'}
+          />
           <Txt size={12} weight="600" color={C.muted}>
             {agentName}
           </Txt>
@@ -343,6 +363,13 @@ export function ChatScreen(props: Props) {
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentName, setAgentName] = useState('');
   const [agentDescription, setAgentDescription] = useState('');
+  const [creationStep, setCreationStep] = useState<1 | 2>(1);
+  const [avatarShape, setAvatarShape] = useState<AgentAvatarChoice['shape']>('circle');
+  const [avatarColor, setAvatarColor] = useState<AgentAvatarChoice['color']>('black');
+  const closeCreation = () => {
+    setCreationOpen(false);
+    setCreationStep(1);
+  };
   const [draft, setDraft] = useState('');
   const [showTools, setShowTools] = useState(false);
   const [attachment, setAttachment] = useState<FileAttachment | null>(null);
@@ -632,7 +659,11 @@ export function ChatScreen(props: Props) {
                 accessibilityLabel={`Abrir chat de ${agent.name}`}
               >
                 <Card style={styles.agentCard}>
-                  <AgentAvatar size={53} />
+                  <LiveMotion
+                    size={53}
+                    shape={agent.avatar?.shape ?? 'circle'}
+                    colorId={agent.avatar?.color ?? 'black'}
+                  />
                   <View style={{ flex: 1, marginLeft: 15, gap: 5 }}>
                     <Txt weight="700" size={19}>
                       {agent.name}
@@ -664,7 +695,10 @@ export function ChatScreen(props: Props) {
           animationType="slide"
           presentationStyle="pageSheet"
           visible={creationOpen}
-          onRequestClose={() => setCreationOpen(false)}
+          onRequestClose={() => {
+            if (creationStep === 2) return setCreationStep(1);
+            closeCreation();
+          }}
         >
           <View style={{ flex: 1, backgroundColor: C.white, padding: 26, paddingTop: 45 }}>
             <View
@@ -678,55 +712,154 @@ export function ChatScreen(props: Props) {
               <Txt size={27} weight="700">
                 Criar missão
               </Txt>
-              <RoundButton icon="close" label="Fechar" onPress={() => setCreationOpen(false)} />
+              <RoundButton icon="close" label="Fechar" onPress={closeCreation} />
             </View>
-            <Txt size={13} color={C.muted} style={{ marginBottom: 10 }}>
-              NOME DO AGENTE / MISSÃO
-            </Txt>
-            <TextInput
-              value={agentName}
-              onChangeText={setAgentName}
-              placeholder="Ex.: Eliot"
-              style={styles.field}
-              placeholderTextColor={C.faint}
-            />
-            <Txt size={13} color={C.muted} style={{ marginTop: 20, marginBottom: 10 }}>
-              INSTRUÇÃO OU PAPEL
-            </Txt>
-            <TextInput
-              value={agentDescription}
-              onChangeText={setAgentDescription}
-              placeholder="Ex.: Pesquisar e sintetizar relatórios com ferramentas autónomas"
-              multiline
-              style={[styles.field, { height: 110, textAlignVertical: 'top' }]}
-              placeholderTextColor={C.faint}
-            />
-            <Pressable
-              disabled={creatingAgent}
-              onPress={async () => {
-                if (!agentName.trim()) return props.onError('Indica o nome do agente.');
-                setCreatingAgent(true);
-                try {
-                  await props.onNew(agentName.trim(), agentDescription.trim());
-                  setCreationOpen(false);
-                  setAgentName('');
-                  setAgentDescription('');
-                } catch {
-                  // Error handled in parent
-                } finally {
-                  setCreatingAgent(false);
-                }
-              }}
-              style={[styles.blackButton, creatingAgent && { opacity: 0.7 }]}
-            >
-              {creatingAgent ? (
-                <ActivityIndicator color={C.white} />
-              ) : (
-                <Txt color={C.white} weight="700">
-                  Criar missão
+            {creationStep === 1 ? (
+              <>
+                <Txt size={13} color={C.muted} style={{ marginBottom: 10 }}>
+                  NOME DO AGENTE / MISSÃO
                 </Txt>
-              )}
-            </Pressable>
+                <TextInput
+                  value={agentName}
+                  onChangeText={setAgentName}
+                  placeholder="Ex.: Eliot"
+                  style={styles.field}
+                  placeholderTextColor={C.faint}
+                />
+                <Txt size={13} color={C.muted} style={{ marginTop: 20, marginBottom: 10 }}>
+                  INSTRUÇÃO OU PAPEL
+                </Txt>
+                <TextInput
+                  value={agentDescription}
+                  onChangeText={setAgentDescription}
+                  placeholder="Ex.: Pesquisar e sintetizar relatórios com ferramentas autónomas"
+                  multiline
+                  style={[styles.field, { height: 110, textAlignVertical: 'top' }]}
+                  placeholderTextColor={C.faint}
+                />
+                <Pressable
+                  onPress={() => {
+                    if (!agentName.trim()) return props.onError('Indica o nome do agente.');
+                    setCreationStep(2);
+                  }}
+                  style={styles.blackButton}
+                >
+                  <Txt color={C.white} weight="700">
+                    Continuar
+                  </Txt>
+                </Pressable>
+              </>
+            ) : (
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 30 }}
+                showsVerticalScrollIndicator={false}
+              >
+                <Txt size={13} color={C.muted} style={{ marginBottom: 10 }}>
+                  AVATAR DO AGENTE
+                </Txt>
+                <Card style={{ alignItems: 'center', paddingVertical: 26, gap: 12 }}>
+                  <LiveMotion size={150} shape={avatarShape} colorId={avatarColor} />
+                  <Txt weight="700" size={17} numberOfLines={1}>
+                    {agentName.trim() || 'Agente'}
+                  </Txt>
+                </Card>
+
+                <Txt size={13} color={C.muted} style={{ marginTop: 22, marginBottom: 10 }}>
+                  FORMA
+                </Txt>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginHorizontal: -26 }}
+                  contentContainerStyle={{ paddingHorizontal: 26, gap: 8 }}
+                >
+                  {BODY_SHAPES.map((s) => {
+                    const selected = avatarShape === s.id;
+                    return (
+                      <Pressable
+                        key={s.id}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        onPress={() => setAvatarShape(s.id)}
+                        style={[
+                          styles.avatarChip,
+                          selected && { backgroundColor: C.ink, borderColor: C.ink },
+                        ]}
+                      >
+                        <Txt size={13} weight="600" color={selected ? C.white : C.muted}>
+                          {s.label}
+                        </Txt>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+
+                <Txt size={13} color={C.muted} style={{ marginTop: 22, marginBottom: 10 }}>
+                  COR
+                </Txt>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                  {PALETTE.map((c) => {
+                    const selected = avatarColor === c.id;
+                    return (
+                      <Pressable
+                        key={c.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={c.label}
+                        accessibilityState={{ selected }}
+                        onPress={() => setAvatarColor(c.id)}
+                        style={[
+                          styles.avatarColor,
+                          { borderColor: selected ? C.ink : C.border, borderWidth: selected ? 2 : 1 },
+                        ]}
+                      >
+                        <View style={{ flex: 1, borderRadius: 99, backgroundColor: c.hex }} />
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Pressable
+                  disabled={creatingAgent}
+                  onPress={async () => {
+                    setCreatingAgent(true);
+                    try {
+                      await props.onNew(agentName.trim(), agentDescription.trim(), {
+                        shape: avatarShape,
+                        color: avatarColor,
+                      });
+                      closeCreation();
+                      setAgentName('');
+                      setAgentDescription('');
+                      setAvatarShape('circle');
+                      setAvatarColor('black');
+                    } catch {
+                      // Error handled in parent
+                    } finally {
+                      setCreatingAgent(false);
+                    }
+                  }}
+                  style={[styles.blackButton, { marginTop: 28 }, creatingAgent && { opacity: 0.7 }]}
+                >
+                  {creatingAgent ? (
+                    <ActivityIndicator color={C.white} />
+                  ) : (
+                    <Txt color={C.white} weight="700">
+                      Criar missão
+                    </Txt>
+                  )}
+                </Pressable>
+                <Pressable
+                  disabled={creatingAgent}
+                  onPress={() => setCreationStep(1)}
+                  style={{ height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 6 }}
+                >
+                  <Txt color={C.muted} weight="600" size={14}>
+                    Voltar
+                  </Txt>
+                </Pressable>
+              </ScrollView>
+            )}
           </View>
         </Modal>
       </View>
@@ -744,7 +877,11 @@ export function ChatScreen(props: Props) {
       {/* Chat Header */}
       <View style={styles.header}>
         <RoundButton icon="chevron-back" label="Voltar aos agentes" onPress={props.onBack} />
-        <AgentAvatar size={42} />
+        <LiveMotion
+          size={42}
+          shape={agent.avatar?.shape ?? 'circle'}
+          colorId={agent.avatar?.color ?? 'black'}
+        />
         <View style={{ flex: 1 }}>
           <Txt weight="700" size={18} numberOfLines={1}>
             {agent.name}
@@ -778,9 +915,15 @@ export function ChatScreen(props: Props) {
         data={props.messages}
         keyExtractor={(m) => m.id}
         keyboardShouldPersistTaps="handled"
-        renderItem={({ item }) => <MessageBubble item={item} agentName={agent.name} />}
+        renderItem={({ item }) => (
+          <MessageBubble item={item} agentName={agent.name} avatar={agent.avatar} />
+        )}
         ListFooterComponent={
-          props.busy ? <ThinkingBubble agentName={agent.name} /> : <View style={{ height: 12 }} />
+          props.busy ? (
+            <ThinkingBubble agentName={agent.name} avatar={agent.avatar} />
+          ) : (
+            <View style={{ height: 12 }} />
+          )
         }
         ListEmptyComponent={
           <View
@@ -792,7 +935,11 @@ export function ChatScreen(props: Props) {
               marginBottom: 70,
             }}
           >
-            <AgentAvatar size={74} />
+            <LiveMotion
+              size={74}
+              shape={agent.avatar?.shape ?? 'circle'}
+              colorId={agent.avatar?.color ?? 'black'}
+            />
             <Txt size={26} weight="600" style={{ marginTop: 10, letterSpacing: -0.5 }}>
               Como posso ajudar?
             </Txt>
@@ -1007,7 +1154,11 @@ export function ChatScreen(props: Props) {
           </Animated.View>
 
           <View style={styles.agentChip}>
-            <AgentAvatar size={22} />
+            <LiveMotion
+              size={22}
+              shape={agent.avatar?.shape ?? 'circle'}
+              colorId={agent.avatar?.color ?? 'black'}
+            />
             <Txt size={14} weight="600" numberOfLines={1} style={{ flexShrink: 1 }}>
               {agent.name}
             </Txt>
@@ -1392,6 +1543,22 @@ const styles = StyleSheet.create({
     height: 54,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  avatarChip: {
+    backgroundColor: C.surface,
+    borderRadius: 40,
+    paddingHorizontal: 18,
+    height: 43,
+    borderWidth: 1,
+    borderColor: C.border,
+    justifyContent: 'center',
+  },
+  avatarColor: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    padding: 4,
+    backgroundColor: C.white,
   },
   header: {
     paddingHorizontal: 18,

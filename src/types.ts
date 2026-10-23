@@ -41,12 +41,18 @@ export interface FileAttachment {
   size?: number;
 }
 
+export interface AgentAvatarChoice {
+  shape: 'circle' | 'heart' | 'diamond' | 'spade' | 'club';
+  color: 'black' | 'turquoise' | 'cyan' | 'neonBlue' | 'lilac' | 'lightPurple';
+}
+
 export interface Agent {
   id: string;
   name: string;
   description: string;
   status?: 'idle' | 'running' | 'paused';
   icon?: string;
+  avatar?: AgentAvatarChoice;
   config?: AgentConfig;
   grants?: AgentGrants;
   workflowId?: string;
@@ -136,7 +142,12 @@ export interface CellGateway {
   readonly demo: boolean;
   signIn(email: string, password: string): Promise<Session>;
   getAgents(session?: Session): Promise<Agent[]>;
-  createAgent(name: string, description: string, session?: Session): Promise<Agent>;
+  createAgent(
+    name: string,
+    description: string,
+    session?: Session,
+    avatar?: AgentAvatarChoice
+  ): Promise<Agent>;
   getAgentProfile(workflowId: string, session?: Session): Promise<AgentProfile | null>;
   saveAgentProfile(workflowId: string, profile: Partial<AgentProfile>, session?: Session): Promise<void>;
   getMessages(agentId: string, session?: Session): Promise<AgentMessage[]>;
