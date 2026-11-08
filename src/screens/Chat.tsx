@@ -8,25 +8,34 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
-  Switch,
   TextInput,
   View,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import * as Clipboard from 'expo-clipboard';
+import { RunCard } from '../components/RunCard';
+import { TERMINAL_STATUSES } from '../services/contracts';
+import { readAttachment, guessMime } from '../services/files';
 import { AgentAvatar } from '../components/AgentAvatar';
 import { LiveMotion } from '../components/LiveMotion';
-import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
+import {
+  Card,
+  Icon,
+  PageTitle,
+  Pill,
+  RoundButton,
+  Txt,
+} from '../components/UI';
 import { BODY_SHAPES } from '../motion/Motion';
 import { PALETTE } from '../motion/core/palette';
 import { C, R } from '../theme';
 import type {
   Agent,
+  AgentRun,
+  RunOperation,
   AgentAvatarChoice,
-  AgentConfig,
-  AgentGrants,
   AgentMessage,
   CaptureItem,
   FileAttachment,
@@ -39,23 +48,32 @@ type Props = {
   demo: boolean;
   busy: boolean;
   captures?: CaptureItem[];
+  draft: string;
+  attachment: FileAttachment | null;
+  onDraftChange: React.Dispatch<React.SetStateAction<string>>;
+  onAttachmentChange: (file: FileAttachment | null) => void;
   onOpen: (agent: Agent) => void;
   onBack: () => void;
-  onNew: (name: string, description: string, avatar?: AgentAvatarChoice) => Promise<void> | void;
+  onNew: (
+    name: string,
+    description: string,
+    avatar?: AgentAvatarChoice,
+  ) => Promise<void> | void;
   onSend: (content: string, attachment?: FileAttachment) => Promise<void>;
   onRefresh: () => void;
   onError: (message: string) => void;
-  onClearHistory?: (agentId: string) => Promise<void>;
-  onSaveAgentSettings?: (agentId: string, config: AgentConfig, grants: AgentGrants) => Promise<void>;
+  runs: AgentRun[];
+  primaryId: string | null;
+  canSend: boolean;
+  controlBusy: string | null;
+  onSettings: () => void;
+  onTools: () => void;
+  onActivity: () => void;
+  onPrimary: (agent: Agent) => Promise<void>;
+  onRetry: (pendingId: string) => Promise<void>;
+  onControl: (run: AgentRun, operation: RunOperation) => Promise<void>;
+  onFile: (runId: string, fileId: string) => Promise<void>;
 };
-
-const PROVIDERS = ['google', 'openai', 'anthropic', 'groq', 'mistral', 'deepseek'] as const;
-const TEMPERATURES = [
-  { label: '0.2 Baixa', val: 0.2 },
-  { label: '0.7 Padrão', val: 0.7 },
-  { label: '1.0 Criativa', val: 1.0 },
-];
-const MAX_LOOPS = [16, 24, 32, 48];
 
 function ThinkingBubble({
   agentName,
@@ -84,7 +102,7 @@ function ThinkingBubble({
             useNativeDriver: true,
           }),
           Animated.delay(Math.max(0, 700 - delay)),
-        ])
+        ]),
       );
     };
 
@@ -105,7 +123,15 @@ function ThinkingBubble({
 
   return (
     <View style={{ alignItems: 'flex-start', marginTop: 4, marginBottom: 14 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 7, paddingLeft: 4 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 7,
+          marginBottom: 7,
+          paddingLeft: 4,
+        }}
+      >
         <LiveMotion
           size={20}
           shape={avatar?.shape ?? 'circle'}
@@ -228,9 +254,7 @@ function MessageBubble({
 
   const handleCopyMessage = async () => {
     try {
-      await Share.share({
-        message: item.content,
-      });
+      await Clipboard.setStringAsync(item.content);
       setCopied(true);
       setTimeout(() => {
         setCopied(false);
@@ -251,7 +275,15 @@ function MessageBubble({
       }}
     >
       {!isUser && (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 7, paddingLeft: 4 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 7,
+            marginBottom: 7,
+            paddingLeft: 4,
+          }}
+        >
           <LiveMotion
             size={20}
             shape={avatar?.shape ?? 'circle'}
@@ -364,76 +396,38 @@ export function ChatScreen(props: Props) {
   const [agentName, setAgentName] = useState('');
   const [agentDescription, setAgentDescription] = useState('');
   const [creationStep, setCreationStep] = useState<1 | 2>(1);
-  const [avatarShape, setAvatarShape] = useState<AgentAvatarChoice['shape']>('circle');
-  const [avatarColor, setAvatarColor] = useState<AgentAvatarChoice['color']>('black');
+  const [avatarShape, setAvatarShape] =
+    useState<AgentAvatarChoice['shape']>('circle');
+  const [avatarColor, setAvatarColor] =
+    useState<AgentAvatarChoice['color']>('black');
   const closeCreation = () => {
     setCreationOpen(false);
     setCreationStep(1);
   };
-  const [draft, setDraft] = useState('');
+  const draft = props.draft;
+  const setDraft = props.onDraftChange;
   const [showTools, setShowTools] = useState(false);
-  const [attachment, setAttachment] = useState<FileAttachment | null>(null);
+  const attachment = props.attachment;
+  const setAttachment = props.onAttachmentChange;
   const [libraryOpen, setLibraryOpen] = useState(false);
 
   // Animated rotation for '+' to 'x' button and smooth card entrance
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const menuAnim = useRef(new Animated.Value(0)).current;
 
-  // Agent Settings & Grants Modal
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'model' | 'grants'>('model');
-  const [savingSettings, setSavingSettings] = useState(false);
-
-  // Configuration state
-  const [provider, setProvider] = useState<string>('google');
-  const [model, setModel] = useState('gemini-1.5-pro');
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [temperature, setTemperature] = useState(0.7);
-  const [maxIterations, setMaxIterations] = useState(24);
-
-  // Grants state
-  const [grants, setGrants] = useState<AgentGrants>({
-    editGraph: false,
-    executeCode: true,
-    webSearch: true,
-    teams: false,
-    externalEffects: false,
-    verificationRequired: false,
-  });
-
   const listRef = useRef<FlatList<AgentMessage>>(null);
+  const followLatest = useRef(true);
 
   useEffect(() => {
-    setDraft('');
     setShowTools(false);
     rotateAnim.setValue(0);
     menuAnim.setValue(0);
-    setAttachment(null);
-    if (props.activeAgent) {
-      const cfg = props.activeAgent.config;
-      if (cfg) {
-        setProvider(cfg.provider || 'google');
-        setModel(cfg.model || 'gemini-1.5-pro');
-        setSystemPrompt(cfg.systemPrompt || '');
-        setTemperature(cfg.temperature ?? 0.7);
-        setMaxIterations(cfg.maxModelCalls ?? 24);
-      }
-      if (props.activeAgent.grants) {
-        setGrants({
-          editGraph: Boolean(props.activeAgent.grants.editGraph),
-          executeCode: Boolean(props.activeAgent.grants.executeCode),
-          webSearch: Boolean(props.activeAgent.grants.webSearch),
-          teams: Boolean(props.activeAgent.grants.teams),
-          externalEffects: Boolean(props.activeAgent.grants.externalEffects),
-          verificationRequired: Boolean(props.activeAgent.grants.verificationRequired),
-        });
-      }
-    }
   }, [props.activeAgent?.id]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated: true });
+      if (followLatest.current)
+        listRef.current?.scrollToEnd({ animated: true });
     }, 60);
     return () => clearTimeout(timer);
   }, [props.messages.length, props.busy]);
@@ -493,138 +487,107 @@ export function ChatScreen(props: Props) {
     });
   };
 
+  const pickerError = (error: unknown) =>
+    props.onError(
+      error instanceof Error
+        ? error.message
+        : 'Não foi possível ler o ficheiro.',
+    );
   const handlePickDocument = async () => {
     closeTools();
     try {
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
         multiple: false,
+        type: ['application/pdf', 'text/*', 'image/*', 'application/json'],
       });
       if (result.canceled || !result.assets.length) return;
       const asset = result.assets[0];
-
-      let base64 = '';
-      try {
-        const response = await fetch(asset.uri);
-        const blob = await response.blob();
-        base64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const dataUrl = reader.result as string;
-            const b64 = dataUrl.split(',')[1] || '';
-            resolve(b64);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      } catch {
-        base64 = '';
-      }
-
-      setAttachment({
-        name: asset.name,
-        mimeType: asset.mimeType || 'application/octet-stream',
-        data: base64,
-        uri: asset.uri,
-        size: asset.size,
-      });
-    } catch {
-      props.onError('Não foi possível carregar o documento.');
+      setAttachment(
+        await readAttachment(
+          asset.uri,
+          asset.name,
+          asset.mimeType || guessMime(asset.name),
+          asset.size,
+        ),
+      );
+    } catch (error) {
+      pickerError(error);
     }
   };
-
   const handleLaunchCamera = async () => {
     closeTools();
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
-      if (!permission.granted) {
-        props.onError('Permissão de acesso à câmara necessária.');
-        return;
-      }
+      if (!permission.granted)
+        throw new Error('Permite o acesso à câmara para tirar uma fotografia.');
       const result = await ImagePicker.launchCameraAsync({
         quality: 0.8,
         base64: true,
       });
       if (result.canceled || !result.assets.length) return;
-      const asset = result.assets[0];
-      setAttachment({
-        name: `foto_${Date.now()}.jpg`,
-        mimeType: 'image/jpeg',
-        data: asset.base64 || '',
-        uri: asset.uri,
-      });
-    } catch {
-      props.onError('Não foi possível tirar a fotografia.');
+      const asset = result.assets[0],
+        name = asset.fileName || 'foto_' + Date.now() + '.jpg';
+      setAttachment(
+        await readAttachment(
+          asset.uri,
+          name,
+          asset.mimeType || 'image/jpeg',
+          asset.fileSize,
+          asset.base64 || undefined,
+        ),
+      );
+    } catch (error) {
+      pickerError(error);
     }
   };
-
   const handleLaunchGallery = async () => {
     closeTools();
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        props.onError('Permissão de fotos necessária.');
-        return;
-      }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images', 'videos'],
+        mediaTypes: ['images'],
         quality: 0.8,
         base64: true,
       });
       if (result.canceled || !result.assets.length) return;
-      const asset = result.assets[0];
-      setAttachment({
-        name: asset.fileName || `media_${Date.now()}.${asset.type === 'video' ? 'mp4' : 'jpg'}`,
-        mimeType: asset.mimeType || (asset.type === 'video' ? 'video/mp4' : 'image/jpeg'),
-        data: asset.base64 || '',
-        uri: asset.uri,
-      });
-    } catch {
-      props.onError('Não foi possível carregar a imagem ou vídeo.');
+      const asset = result.assets[0],
+        name = asset.fileName || 'imagem_' + Date.now() + '.jpg';
+      setAttachment(
+        await readAttachment(
+          asset.uri,
+          name,
+          asset.mimeType || 'image/jpeg',
+          asset.fileSize,
+          asset.base64 || undefined,
+        ),
+      );
+    } catch (error) {
+      pickerError(error);
     }
   };
-
-  const handleSelectCapture = (item: CaptureItem) => {
+  const handleSelectCapture = async (item: CaptureItem) => {
     setLibraryOpen(false);
     closeTools();
-    setAttachment({
-      name: item.title,
-      mimeType: item.type === 'image' ? 'image/jpeg' : 'text/plain',
-      data: item.base64 || '',
-      uri: item.uri,
-    });
-  };
-
-  const handleSaveSettings = async () => {
-    if (!props.activeAgent) return;
-    setSavingSettings(true);
     try {
-      const updatedConfig: AgentConfig = {
-        provider,
-        model,
-        role: props.activeAgent.name,
-        systemPrompt,
-        temperature,
-        maxModelCalls: maxIterations,
-      };
-      if (props.onSaveAgentSettings) {
-        await props.onSaveAgentSettings(props.activeAgent.id, updatedConfig, grants);
+      if (item.type === 'text') {
+        setDraft((value) =>
+          value ? value + '\n' + (item.note || '') : item.note || '',
+        );
+        return;
       }
-      setSettingsOpen(false);
-    } catch (e: any) {
-      props.onError(e?.message || 'Falha ao guardar definições do agente.');
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
-  const handleClearHistory = async () => {
-    if (!props.activeAgent || !props.onClearHistory) return;
-    try {
-      await props.onClearHistory(props.activeAgent.id);
-      setSettingsOpen(false);
-    } catch {
-      props.onError('Falha ao limpar histórico.');
+      if (!item.uri)
+        throw new Error('Esta captura já não contém um ficheiro disponível.');
+      setAttachment(
+        await readAttachment(
+          item.uri,
+          item.title,
+          item.mimeType || guessMime(item.title),
+          item.size,
+          item.base64,
+        ),
+      );
+    } catch (error) {
+      pickerError(error);
     }
   };
 
@@ -639,9 +602,19 @@ export function ChatScreen(props: Props) {
       <View style={{ flex: 1, backgroundColor: C.white }}>
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 24, paddingTop: 36, paddingBottom: 126 }}
+          contentContainerStyle={{
+            padding: 24,
+            paddingTop: 36,
+            paddingBottom: 126,
+          }}
         >
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
             <PageTitle kicker="Espaço de Trabalho Ativo" title="Agentes" />
             <RoundButton
               icon="add"
@@ -672,7 +645,32 @@ export function ChatScreen(props: Props) {
                       {agent.description}
                     </Txt>
                   </View>
-                  <Icon name="chevron-forward" color={C.muted} size={21} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      props.primaryId === agent.id
+                        ? 'Agente principal'
+                        : 'Definir como agente principal'
+                    }
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      void props.onPrimary(agent);
+                    }}
+                    style={{
+                      minWidth: 44,
+                      minHeight: 44,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Icon
+                      name={
+                        props.primaryId === agent.id ? 'star' : 'star-outline'
+                      }
+                      color={props.primaryId === agent.id ? C.ink : C.muted}
+                      size={21}
+                    />
+                  </Pressable>
                 </Card>
               </Pressable>
             ))}
@@ -683,8 +681,9 @@ export function ChatScreen(props: Props) {
                   Nenhum agente no espaço
                 </Txt>
                 <Txt color={C.muted} size={14}>
-                  Os fluxos e agentes reais são carregados da tua base de dados Supabase. Toca no
-                  botão + acima para criar o teu primeiro agente autónomo.
+                  Os fluxos e agentes reais são carregados da tua base de dados
+                  Supabase. Toca no botão + acima para criar o teu primeiro
+                  agente autónomo.
                 </Txt>
               </Card>
             )}
@@ -700,7 +699,14 @@ export function ChatScreen(props: Props) {
             closeCreation();
           }}
         >
-          <View style={{ flex: 1, backgroundColor: C.white, padding: 26, paddingTop: 45 }}>
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: C.white,
+              padding: 26,
+              paddingTop: 45,
+            }}
+          >
             <View
               style={{
                 flexDirection: 'row',
@@ -710,9 +716,13 @@ export function ChatScreen(props: Props) {
               }}
             >
               <Txt size={27} weight="700">
-                Criar missão
+                Tarefas
               </Txt>
-              <RoundButton icon="close" label="Fechar" onPress={closeCreation} />
+              <RoundButton
+                icon="close"
+                label="Fechar"
+                onPress={closeCreation}
+              />
             </View>
             {creationStep === 1 ? (
               <>
@@ -726,7 +736,11 @@ export function ChatScreen(props: Props) {
                   style={styles.field}
                   placeholderTextColor={C.faint}
                 />
-                <Txt size={13} color={C.muted} style={{ marginTop: 20, marginBottom: 10 }}>
+                <Txt
+                  size={13}
+                  color={C.muted}
+                  style={{ marginTop: 20, marginBottom: 10 }}
+                >
                   INSTRUÇÃO OU PAPEL
                 </Txt>
                 <TextInput
@@ -734,12 +748,16 @@ export function ChatScreen(props: Props) {
                   onChangeText={setAgentDescription}
                   placeholder="Ex.: Pesquisar e sintetizar relatórios com ferramentas autónomas"
                   multiline
-                  style={[styles.field, { height: 110, textAlignVertical: 'top' }]}
+                  style={[
+                    styles.field,
+                    { height: 110, textAlignVertical: 'top' },
+                  ]}
                   placeholderTextColor={C.faint}
                 />
                 <Pressable
                   onPress={() => {
-                    if (!agentName.trim()) return props.onError('Indica o nome do agente.');
+                    if (!agentName.trim())
+                      return props.onError('Indica o nome do agente.');
                     setCreationStep(2);
                   }}
                   style={styles.blackButton}
@@ -758,14 +776,24 @@ export function ChatScreen(props: Props) {
                 <Txt size={13} color={C.muted} style={{ marginBottom: 10 }}>
                   AVATAR DO AGENTE
                 </Txt>
-                <Card style={{ alignItems: 'center', paddingVertical: 26, gap: 12 }}>
-                  <LiveMotion size={150} shape={avatarShape} colorId={avatarColor} />
+                <Card
+                  style={{ alignItems: 'center', paddingVertical: 26, gap: 12 }}
+                >
+                  <LiveMotion
+                    size={150}
+                    shape={avatarShape}
+                    colorId={avatarColor}
+                  />
                   <Txt weight="700" size={17} numberOfLines={1}>
                     {agentName.trim() || 'Agente'}
                   </Txt>
                 </Card>
 
-                <Txt size={13} color={C.muted} style={{ marginTop: 22, marginBottom: 10 }}>
+                <Txt
+                  size={13}
+                  color={C.muted}
+                  style={{ marginTop: 22, marginBottom: 10 }}
+                >
                   FORMA
                 </Txt>
                 <ScrollView
@@ -784,10 +812,17 @@ export function ChatScreen(props: Props) {
                         onPress={() => setAvatarShape(s.id)}
                         style={[
                           styles.avatarChip,
-                          selected && { backgroundColor: C.ink, borderColor: C.ink },
+                          selected && {
+                            backgroundColor: C.ink,
+                            borderColor: C.ink,
+                          },
                         ]}
                       >
-                        <Txt size={13} weight="600" color={selected ? C.white : C.muted}>
+                        <Txt
+                          size={13}
+                          weight="600"
+                          color={selected ? C.white : C.muted}
+                        >
                           {s.label}
                         </Txt>
                       </Pressable>
@@ -795,10 +830,16 @@ export function ChatScreen(props: Props) {
                   })}
                 </ScrollView>
 
-                <Txt size={13} color={C.muted} style={{ marginTop: 22, marginBottom: 10 }}>
+                <Txt
+                  size={13}
+                  color={C.muted}
+                  style={{ marginTop: 22, marginBottom: 10 }}
+                >
                   COR
                 </Txt>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                <View
+                  style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}
+                >
                   {PALETTE.map((c) => {
                     const selected = avatarColor === c.id;
                     return (
@@ -810,10 +851,19 @@ export function ChatScreen(props: Props) {
                         onPress={() => setAvatarColor(c.id)}
                         style={[
                           styles.avatarColor,
-                          { borderColor: selected ? C.ink : C.border, borderWidth: selected ? 2 : 1 },
+                          {
+                            borderColor: selected ? C.ink : C.border,
+                            borderWidth: selected ? 2 : 1,
+                          },
                         ]}
                       >
-                        <View style={{ flex: 1, borderRadius: 99, backgroundColor: c.hex }} />
+                        <View
+                          style={{
+                            flex: 1,
+                            borderRadius: 99,
+                            backgroundColor: c.hex,
+                          }}
+                        />
                       </Pressable>
                     );
                   })}
@@ -824,10 +874,14 @@ export function ChatScreen(props: Props) {
                   onPress={async () => {
                     setCreatingAgent(true);
                     try {
-                      await props.onNew(agentName.trim(), agentDescription.trim(), {
-                        shape: avatarShape,
-                        color: avatarColor,
-                      });
+                      await props.onNew(
+                        agentName.trim(),
+                        agentDescription.trim(),
+                        {
+                          shape: avatarShape,
+                          color: avatarColor,
+                        },
+                      );
                       closeCreation();
                       setAgentName('');
                       setAgentDescription('');
@@ -839,7 +893,11 @@ export function ChatScreen(props: Props) {
                       setCreatingAgent(false);
                     }
                   }}
-                  style={[styles.blackButton, { marginTop: 28 }, creatingAgent && { opacity: 0.7 }]}
+                  style={[
+                    styles.blackButton,
+                    { marginTop: 28 },
+                    creatingAgent && { opacity: 0.7 },
+                  ]}
                 >
                   {creatingAgent ? (
                     <ActivityIndicator color={C.white} />
@@ -852,7 +910,12 @@ export function ChatScreen(props: Props) {
                 <Pressable
                   disabled={creatingAgent}
                   onPress={() => setCreationStep(1)}
-                  style={{ height: 48, alignItems: 'center', justifyContent: 'center', marginTop: 6 }}
+                  style={{
+                    height: 48,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginTop: 6,
+                  }}
                 >
                   <Txt color={C.muted} weight="600" size={14}>
                     Voltar
@@ -876,7 +939,11 @@ export function ChatScreen(props: Props) {
     >
       {/* Chat Header */}
       <View style={styles.header}>
-        <RoundButton icon="chevron-back" label="Voltar aos agentes" onPress={props.onBack} />
+        <RoundButton
+          icon="chevron-back"
+          label="Voltar aos agentes"
+          onPress={props.onBack}
+        />
         <LiveMotion
           size={42}
           shape={agent.avatar?.shape ?? 'circle'}
@@ -886,7 +953,14 @@ export function ChatScreen(props: Props) {
           <Txt weight="700" size={18} numberOfLines={1}>
             {agent.name}
           </Txt>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              marginTop: 1,
+            }}
+          >
             <View
               style={{
                 width: 7,
@@ -896,34 +970,114 @@ export function ChatScreen(props: Props) {
               }}
             />
             <Txt color={C.muted} size={12} numberOfLines={1}>
-              {props.busy ? 'A pensar...' : (agent.config?.role || `${provider.toUpperCase()} · ${model}`)}
+              {props.busy
+                ? 'A enviar…'
+                : props.runs.some((run) => !TERMINAL_STATUSES.has(run.status))
+                  ? 'Tarefa em curso'
+                  : 'Agente central do workflow'}
             </Txt>
           </View>
         </View>
         <RoundButton
           icon="ellipsis-horizontal"
           label="Definições e permissões do agente"
-          onPress={() => setSettingsOpen(true)}
+          onPress={props.onSettings}
         />
       </View>
 
+      <View
+        style={{
+          flexDirection: 'row',
+          gap: 8,
+          paddingHorizontal: 20,
+          paddingBottom: 10,
+        }}
+      >
+        <Pill onPress={props.onTools}>Capacidades</Pill>
+        <Pill onPress={props.onActivity}>Tarefas</Pill>
+        {!props.canSend && (
+          <Pill onPress={props.onSettings}>Configurar modelo</Pill>
+        )}
+      </View>
       {/* Messages List */}
       <FlatList
         ref={listRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 25, flexGrow: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingBottom: 25,
+          flexGrow: 1,
+        }}
         data={props.messages}
         keyExtractor={(m) => m.id}
         keyboardShouldPersistTaps="handled"
+        onScroll={(event) => {
+          const { layoutMeasurement, contentOffset, contentSize } =
+            event.nativeEvent;
+          followLatest.current =
+            contentSize.height - contentOffset.y - layoutMeasurement.height <
+            160;
+        }}
+        scrollEventThrottle={100}
         renderItem={({ item }) => (
-          <MessageBubble item={item} agentName={agent.name} avatar={agent.avatar} />
+          <View>
+            <MessageBubble
+              item={item}
+              agentName={agent.name}
+              avatar={agent.avatar}
+            />
+            {item.pendingId && item.status === 'failed' && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={props.busy}
+                onPress={() => void props.onRetry(item.pendingId!)}
+                style={{ alignSelf: 'flex-end', padding: 12, marginBottom: 8 }}
+              >
+                <Txt size={12} color={C.error}>
+                  Repetir envio
+                </Txt>
+              </Pressable>
+            )}
+            {item.role === 'user' &&
+              item.runId &&
+              (
+                props.runs.find((run) => run.id === item.runId)?.files || []
+              ).map((file) => (
+                <Pressable
+                  key={file.id}
+                  accessibilityRole="button"
+                  onPress={() => void props.onFile(item.runId!, file.id)}
+                  style={{ padding: 12, minHeight: 44 }}
+                >
+                  <Txt size={12} color={C.muted}>
+                    Abrir anexo · {file.name}
+                  </Txt>
+                </Pressable>
+              ))}
+          </View>
         )}
         ListFooterComponent={
-          props.busy ? (
-            <ThinkingBubble agentName={agent.name} avatar={agent.avatar} />
-          ) : (
-            <View style={{ height: 12 }} />
-          )
+          <View style={{ gap: 12, paddingTop: 12 }}>
+            {props.busy && (
+              <ThinkingBubble agentName={agent.name} avatar={agent.avatar} />
+            )}
+            {props.runs
+              .filter(
+                (run) =>
+                  !TERMINAL_STATUSES.has(run.status) ||
+                  (run.generatedFiles || []).length > 0,
+              )
+              .slice(-8)
+              .map((run) => (
+                <RunCard
+                  key={run.id}
+                  run={run}
+                  busy={props.controlBusy === run.id}
+                  onControl={props.onControl}
+                  onFile={props.onFile}
+                />
+              ))}
+          </View>
         }
         ListEmptyComponent={
           <View
@@ -940,11 +1094,24 @@ export function ChatScreen(props: Props) {
               shape={agent.avatar?.shape ?? 'circle'}
               colorId={agent.avatar?.color ?? 'black'}
             />
-            <Txt size={26} weight="600" style={{ marginTop: 10, letterSpacing: -0.5 }}>
+            <Txt
+              size={26}
+              weight="600"
+              style={{ marginTop: 10, letterSpacing: -0.5 }}
+            >
               Como posso ajudar?
             </Txt>
-            <Txt size={14} color={C.muted} style={{ textAlign: 'center', paddingHorizontal: 30, lineHeight: 21 }}>
-              Conversa com {agent.name}. Podes colocar qualquer questão ou partilhar ficheiros para análise.
+            <Txt
+              size={14}
+              color={C.muted}
+              style={{
+                textAlign: 'center',
+                paddingHorizontal: 30,
+                lineHeight: 21,
+              }}
+            >
+              Conversa com {agent.name}. Podes colocar qualquer questão ou
+              partilhar ficheiros para análise.
             </Txt>
           </View>
         }
@@ -979,7 +1146,7 @@ export function ChatScreen(props: Props) {
             style={styles.menuItem}
             onPress={() => {
               closeTools();
-              setCreationOpen(true);
+              props.onActivity();
             }}
           >
             <View style={styles.menuIconCircle}>
@@ -990,7 +1157,7 @@ export function ChatScreen(props: Props) {
                 Criar missão
               </Txt>
               <Txt size={12} color={C.muted}>
-                Missão autónoma no projeto
+                Acompanhar o trabalho do agente
               </Txt>
             </View>
             <Icon name="chevron-forward" size={16} color={C.muted} />
@@ -999,10 +1166,7 @@ export function ChatScreen(props: Props) {
           <View style={styles.menuDivider} />
 
           {/* 2. Câmara */}
-          <Pressable
-            style={styles.menuItem}
-            onPress={handleLaunchCamera}
-          >
+          <Pressable style={styles.menuItem} onPress={handleLaunchCamera}>
             <View style={styles.menuIconCircle}>
               <Icon name="camera-outline" size={20} color={C.ink} />
             </View>
@@ -1020,16 +1184,13 @@ export function ChatScreen(props: Props) {
           <View style={styles.menuDivider} />
 
           {/* 3. Imagem ou vídeo */}
-          <Pressable
-            style={styles.menuItem}
-            onPress={handleLaunchGallery}
-          >
+          <Pressable style={styles.menuItem} onPress={handleLaunchGallery}>
             <View style={styles.menuIconCircle}>
               <Icon name="image-outline" size={20} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
               <Txt size={15} weight="700">
-                Imagem ou vídeo
+                Imagem
               </Txt>
               <Txt size={12} color={C.muted}>
                 Da galeria
@@ -1041,10 +1202,7 @@ export function ChatScreen(props: Props) {
           <View style={styles.menuDivider} />
 
           {/* 4. Ficheiros */}
-          <Pressable
-            style={styles.menuItem}
-            onPress={handlePickDocument}
-          >
+          <Pressable style={styles.menuItem} onPress={handlePickDocument}>
             <View style={styles.menuIconCircle}>
               <Icon name="attach-outline" size={20} color={C.ink} />
             </View>
@@ -1090,7 +1248,7 @@ export function ChatScreen(props: Props) {
             style={styles.menuItem}
             onPress={() => {
               closeTools();
-              setSettingsOpen(true);
+              props.onTools();
             }}
           >
             <View style={styles.menuIconCircle}>
@@ -1145,11 +1303,7 @@ export function ChatScreen(props: Props) {
                 showTools && { backgroundColor: C.ink, borderColor: C.ink },
               ]}
             >
-              <Icon
-                name="add"
-                size={23}
-                color={showTools ? C.white : C.ink}
-              />
+              <Icon name="add" size={23} color={showTools ? C.white : C.ink} />
             </Pressable>
           </Animated.View>
 
@@ -1159,7 +1313,12 @@ export function ChatScreen(props: Props) {
               shape={agent.avatar?.shape ?? 'circle'}
               colorId={agent.avatar?.color ?? 'black'}
             />
-            <Txt size={14} weight="600" numberOfLines={1} style={{ flexShrink: 1 }}>
+            <Txt
+              size={14}
+              weight="600"
+              numberOfLines={1}
+              style={{ flexShrink: 1 }}
+            >
               {agent.name}
             </Txt>
             <Icon name="chevron-down" size={17} color={C.muted} />
@@ -1170,7 +1329,9 @@ export function ChatScreen(props: Props) {
             label="Enviar mensagem"
             primary={Boolean(draft.trim() || attachment) && !props.busy}
             size={48}
-            disabled={props.busy || (!draft.trim() && !attachment)}
+            disabled={
+              props.busy || !props.canSend || (!draft.trim() && !attachment)
+            }
             onPress={async () => {
               if ((!draft.trim() && !attachment) || props.busy) return;
               const text = draft.trim();
@@ -1180,288 +1341,16 @@ export function ChatScreen(props: Props) {
               closeTools();
               try {
                 await props.onSend(text, curAtt || undefined);
-              } catch {
-                setDraft(text);
-                setAttachment(curAtt);
+              } catch (error) {
+                if (!(error as { pendingId?: string })?.pendingId) {
+                  setDraft(text);
+                  setAttachment(curAtt);
+                }
               }
             }}
           />
         </View>
       </View>
-
-      {/* 3-DOTS AGENT CONFIG & PERMISSIONS MODAL */}
-      <Modal
-        visible={settingsOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setSettingsOpen(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 24, paddingTop: 40 }}>
-          {/* Sheet Header */}
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 20,
-            }}
-          >
-            <View>
-              <Txt size={24} weight="700">
-                {agent.name}
-              </Txt>
-              <Txt size={13} color={C.muted}>
-                Configurações & Permissões do Agente
-              </Txt>
-            </View>
-            <RoundButton icon="close" label="Fechar" onPress={() => setSettingsOpen(false)} />
-          </View>
-
-          {/* Segmented Switcher */}
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-            <Pill
-              selected={settingsTab === 'model'}
-              onPress={() => setSettingsTab('model')}
-              style={{ flex: 1 }}
-            >
-              IA & Modelo
-            </Pill>
-            <Pill
-              selected={settingsTab === 'grants'}
-              onPress={() => setSettingsTab('grants')}
-              style={{ flex: 1 }}
-            >
-              Permissões
-            </Pill>
-          </View>
-
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
-            {settingsTab === 'model' ? (
-              <View style={{ gap: 16 }}>
-                {/* Provider Selector */}
-                <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
-                    PROVEDOR DE IA
-                  </Txt>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ gap: 8 }}>
-                    {PROVIDERS.map((p) => (
-                      <Pill
-                        key={p}
-                        selected={provider === p}
-                        onPress={() => setProvider(p)}
-                        style={{ marginRight: 8, minHeight: 40 }}
-                      >
-                        {p.toUpperCase()}
-                      </Pill>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Model ID Input */}
-                <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
-                    ID DO MODELO
-                  </Txt>
-                  <TextInput
-                    value={model}
-                    onChangeText={setModel}
-                    placeholder="ex.: gemini-1.5-pro, gpt-4o, claude-3-5-sonnet"
-                    style={styles.field}
-                    placeholderTextColor={C.faint}
-                  />
-                </View>
-
-                {/* System Prompt Input */}
-                <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
-                    PROMPT DO SISTEMA / INSTRUÇÃO CENTRAL
-                  </Txt>
-                  <TextInput
-                    value={systemPrompt}
-                    onChangeText={setSystemPrompt}
-                    multiline
-                    placeholder="Instruções de personalidade, restrições e objetivos do agente..."
-                    style={[styles.field, { height: 100, textAlignVertical: 'top' }]}
-                    placeholderTextColor={C.faint}
-                  />
-                </View>
-
-                {/* Temperature Selector */}
-                <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
-                    TEMPERATURA
-                  </Txt>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {TEMPERATURES.map((t) => (
-                      <Pill
-                        key={t.val}
-                        selected={temperature === t.val}
-                        onPress={() => setTemperature(t.val)}
-                        style={{ flex: 1, minHeight: 40 }}
-                      >
-                        {t.label}
-                      </Pill>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Max Loops Selector */}
-                <View>
-                  <Txt size={12} weight="700" color={C.muted} style={{ marginBottom: 8 }}>
-                    ITERAÇÕES MÁXIMAS (LOOPS DE FERRAMENTAS)
-                  </Txt>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    {MAX_LOOPS.map((l) => (
-                      <Pill
-                        key={l}
-                        selected={maxIterations === l}
-                        onPress={() => setMaxIterations(l)}
-                        style={{ flex: 1, minHeight: 40 }}
-                      >
-                        {l}
-                      </Pill>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            ) : (
-              <View style={{ gap: 14 }}>
-                <Txt size={13} color={C.muted} style={{ marginBottom: 4 }}>
-                  Controle estrito de governança e permissões de execução (AgentGrants) no CELL SYSTEM.
-                </Txt>
-
-                <Card style={styles.grantRow}>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
-                      Editar Grafo Circular
-                    </Txt>
-                    <Txt size={12} color={C.muted}>
-                      Permitir adicionar ou alterar nós no fluxo circular.
-                    </Txt>
-                  </View>
-                  <Switch
-                    value={grants.editGraph}
-                    onValueChange={(val) => setGrants((g) => ({ ...g, editGraph: val }))}
-                    thumbColor={C.white}
-                    trackColor={{ false: C.border, true: C.ink }}
-                  />
-                </Card>
-
-                <Card style={styles.grantRow}>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
-                      Executar Código (Sandbox)
-                    </Txt>
-                    <Txt size={12} color={C.muted}>
-                      Ambiente isolado Python / JavaScript.
-                    </Txt>
-                  </View>
-                  <Switch
-                    value={grants.executeCode}
-                    onValueChange={(val) => setGrants((g) => ({ ...g, executeCode: val }))}
-                    thumbColor={C.white}
-                    trackColor={{ false: C.border, true: C.ink }}
-                  />
-                </Card>
-
-                <Card style={styles.grantRow}>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
-                      Pesquisa Web em Tempo Real
-                    </Txt>
-                    <Txt size={12} color={C.muted}>
-                      Aceder a páginas e notícias recentes via Internet.
-                    </Txt>
-                  </View>
-                  <Switch
-                    value={grants.webSearch}
-                    onValueChange={(val) => setGrants((g) => ({ ...g, webSearch: val }))}
-                    thumbColor={C.white}
-                    trackColor={{ false: C.border, true: C.ink }}
-                  />
-                </Card>
-
-                <Card style={styles.grantRow}>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
-                      Efeitos Externos (APIs / Webhooks)
-                    </Txt>
-                    <Txt size={12} color={C.muted}>
-                      Chamar serviços externos e persistir alterações.
-                    </Txt>
-                  </View>
-                  <Switch
-                    value={grants.externalEffects}
-                    onValueChange={(val) => setGrants((g) => ({ ...g, externalEffects: val }))}
-                    thumbColor={C.white}
-                    trackColor={{ false: C.border, true: C.ink }}
-                  />
-                </Card>
-
-                <Card style={styles.grantRow}>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
-                      Equipa Multi-Agente
-                    </Txt>
-                    <Txt size={12} color={C.muted}>
-                      Subdividir missões em trabalhadores especializados.
-                    </Txt>
-                  </View>
-                  <Switch
-                    value={grants.teams}
-                    onValueChange={(val) => setGrants((g) => ({ ...g, teams: val }))}
-                    thumbColor={C.white}
-                    trackColor={{ false: C.border, true: C.ink }}
-                  />
-                </Card>
-
-                <Card style={styles.grantRow}>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Txt weight="600" size={15}>
-                      Verificação Obrigatória
-                    </Txt>
-                    <Txt size={12} color={C.muted}>
-                      Exigir checkpoints e asserções antes da conclusão.
-                    </Txt>
-                  </View>
-                  <Switch
-                    value={grants.verificationRequired}
-                    onValueChange={(val) => setGrants((g) => ({ ...g, verificationRequired: val }))}
-                    thumbColor={C.white}
-                    trackColor={{ false: C.border, true: C.ink }}
-                  />
-                </Card>
-              </View>
-            )}
-
-            {/* Bottom Actions */}
-            <View style={{ marginTop: 28, gap: 12 }}>
-              <Pressable
-                disabled={savingSettings}
-                onPress={handleSaveSettings}
-                style={styles.blackButton}
-              >
-                {savingSettings ? (
-                  <ActivityIndicator color={C.white} />
-                ) : (
-                  <Txt color={C.white} weight="700">
-                    Guardar alterações
-                  </Txt>
-                )}
-              </Pressable>
-
-              <Pressable
-                onPress={handleClearHistory}
-                style={[styles.blackButton, { backgroundColor: C.surface2, borderWidth: 1, borderColor: C.border }]}
-              >
-                <Txt color={C.error} weight="600">
-                  Limpar Histórico da Conversa
-                </Txt>
-              </Pressable>
-            </View>
-          </ScrollView>
-        </View>
-      </Modal>
 
       {/* Library Picker Modal */}
       <Modal
@@ -1470,7 +1359,14 @@ export function ChatScreen(props: Props) {
         presentationStyle="pageSheet"
         onRequestClose={() => setLibraryOpen(false)}
       >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 24, paddingTop: 40 }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: C.white,
+            padding: 24,
+            paddingTop: 40,
+          }}
+        >
           <View
             style={{
               flexDirection: 'row',
@@ -1482,7 +1378,11 @@ export function ChatScreen(props: Props) {
             <Txt size={24} weight="700">
               Biblioteca Capture
             </Txt>
-            <RoundButton icon="close" label="Fechar" onPress={() => setLibraryOpen(false)} />
+            <RoundButton
+              icon="close"
+              label="Fechar"
+              onPress={() => setLibraryOpen(false)}
+            />
           </View>
           <ScrollView style={{ flex: 1 }}>
             {(props.captures || []).map((item) => (
@@ -1491,14 +1391,21 @@ export function ChatScreen(props: Props) {
                 onPress={() => handleSelectCapture(item)}
                 style={{ marginBottom: 10 }}
               >
-                <Card style={{ padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Card
+                  style={{
+                    padding: 16,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
                   <Icon
                     name={
                       item.type === 'image'
                         ? 'image-outline'
                         : item.type === 'document'
-                        ? 'document-outline'
-                        : 'text-outline'
+                          ? 'document-outline'
+                          : 'text-outline'
                     }
                     size={24}
                   />
@@ -1507,7 +1414,8 @@ export function ChatScreen(props: Props) {
                       {item.title}
                     </Txt>
                     <Txt color={C.muted} size={12}>
-                      {item.source} · {new Date(item.createdAt).toLocaleDateString('pt-PT')}
+                      {item.source} ·{' '}
+                      {new Date(item.createdAt).toLocaleDateString('pt-PT')}
                     </Txt>
                   </View>
                   <Icon name="arrow-forward" size={18} color={C.muted} />
@@ -1527,7 +1435,12 @@ export function ChatScreen(props: Props) {
 }
 
 const styles = StyleSheet.create({
-  agentCard: { padding: 17, minHeight: 91, flexDirection: 'row', alignItems: 'center' },
+  agentCard: {
+    padding: 17,
+    minHeight: 91,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   field: {
     backgroundColor: C.surface,
     borderWidth: 1,
