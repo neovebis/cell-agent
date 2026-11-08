@@ -72,6 +72,7 @@ export interface AgentMessage {
   attachments?: { name: string; mimeType: string }[];
   runId?: string;
   pendingId?: string;
+  error?: string;
 }
 
 export interface CaptureItem {

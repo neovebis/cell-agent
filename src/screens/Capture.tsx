@@ -83,6 +83,8 @@ export function CaptureScreen({
         });
         if (result.canceled || !result.assets.length) return;
         const a = result.assets[0];
+        if (a.size && a.size > 2 * 1024 * 1024)
+          throw new Error('Cada ficheiro pode ter até 2 MiB.');
 
         // Read base64
         let base64 = '';

@@ -4,11 +4,16 @@ import { createServer } from 'node:http';
 import { readFile, mkdir, stat } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
 import { tmpdir } from 'node:os';
-import { chromium } from 'playwright';
+const { chromium } = await import(
+  process.env.CELL_PLAYWRIGHT_MODULE || 'playwright'
+);
 
 const root = resolve(process.env.CELL_UI_DIST || 'build/test-web');
 const evidence =
   process.env.CELL_UI_EVIDENCE || join(tmpdir(), 'cell-agent-ui');
+const apiOrigin = process.env.CELL_UI_API_ORIGIN || 'https://cell-api.example';
+const supabaseOrigin =
+  process.env.CELL_UI_SUPABASE_ORIGIN || 'https://supabase.example';
 await mkdir(evidence, { recursive: true });
 const mime = {
   '.html': 'text/html',
@@ -51,7 +56,12 @@ const server = createServer(async (request, response) => {
 });
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const origin = 'http://127.0.0.1:' + server.address().port;
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  ...(process.env.CELL_CHROMIUM_EXECUTABLE
+    ? { executablePath: process.env.CELL_CHROMIUM_EXECUTABLE }
+    : {}),
+});
 const verdicts = [];
 try {
   for (const viewport of [
@@ -105,7 +115,8 @@ try {
     const headers = {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': '*',
+      'Access-Control-Allow-Headers':
+        'authorization, apikey, content-type, x-workspace-id, prefer',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     };
     await context.route('**/*', async (route) => {
@@ -119,11 +130,7 @@ try {
         await route.continue();
         return;
       }
-      if (
-        !['https://cell-api.example', 'https://supabase.example'].includes(
-          url.origin,
-        )
-      ) {
+      if (![apiOrigin, supabaseOrigin].includes(url.origin)) {
         unexpected.push(request.url());
         await route.abort();
         return;
@@ -229,7 +236,9 @@ try {
       if (url.pathname === '/api/agents/attachments') {
         downloadRequests++;
         return reply({
-          url: 'https://supabase.example/storage/v1/object/sign/agent-native-outputs/relatorio.pdf?token=fixture',
+          url:
+            supabaseOrigin +
+            '/storage/v1/object/sign/agent-native-outputs/relatorio.pdf?token=fixture',
         });
       }
       if (url.pathname.startsWith('/storage/'))
@@ -245,7 +254,10 @@ try {
       return reply({ error: 'Unexpected test request' }, 500);
     });
     const page = await context.newPage();
-    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('pageerror', (error) => {
+      errors.push(error.message);
+      console.error('UI page error:', error.message);
+    });
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text());
     });
@@ -258,7 +270,23 @@ try {
       .fill('fixture-password');
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
     const composer = page.getByLabel('Mensagem ao agente', { exact: true });
-    await composer.waitFor({ timeout: 20000 });
+    await composer.waitFor({ timeout: 20000 }).catch(async (error) => {
+      await page.screenshot({
+        path: join(evidence, viewport.name + '-failure.png'),
+      });
+      console.error(
+        JSON.stringify(
+          {
+            visibleText: await page.locator('body').innerText(),
+            errors,
+            unexpected,
+          },
+          null,
+          2,
+        ),
+      );
+      throw error;
+    });
     await composer.fill('Revê o meu PDF.');
     await page
       .getByRole('button', { name: 'Enviar mensagem', exact: true })

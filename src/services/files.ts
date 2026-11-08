@@ -32,6 +32,13 @@ export async function readAttachment(
     throw new Error('Cada ficheiro pode ter até 2 MiB.');
   if (!uri.startsWith('file:') && !uri.startsWith('content:') && !base64)
     throw new Error('Ficheiro local inválido.');
+  if (!base64 && uri.startsWith('file:')) {
+    const info = await FileSystem.getInfoAsync(uri);
+    if (!info.exists || info.isDirectory)
+      throw new Error('O ficheiro já não está disponível neste dispositivo.');
+    if (info.size > 2 * 1024 * 1024)
+      throw new Error('Cada ficheiro pode ter até 2 MiB.');
+  }
   const data =
     base64 ||
     (await FileSystem.readAsStringAsync(uri, {
@@ -48,6 +55,12 @@ export async function persistCapture(
   if (!item.uri) return item;
   if (!session.userId || !session.workspaceId || !FileSystem.documentDirectory)
     throw new Error('Armazenamento local indisponível.');
+  if (
+    ![session.userId, session.workspaceId].every((id) =>
+      /^[A-Za-z0-9_-]{1,128}$/.test(id),
+    )
+  )
+    throw new Error('Identidade de armazenamento inválida.');
   const folder =
     FileSystem.documentDirectory +
     `captures/${encodeURIComponent(session.userId)}/${encodeURIComponent(session.workspaceId)}/`;
@@ -64,6 +77,8 @@ export async function persistCapture(
 }
 export async function clearCaptureFiles(session: Session): Promise<void> {
   if (!session.userId || !FileSystem.documentDirectory) return;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(session.userId))
+    throw new Error('Identidade de armazenamento inválida.');
   const folder =
     FileSystem.documentDirectory +
     `captures/${encodeURIComponent(session.userId)}/`;

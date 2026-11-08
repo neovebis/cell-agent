@@ -63,6 +63,8 @@ export function useAgentApp() {
   const [runs, setRuns] = useState<AgentRun[]>([]),
     [pending, setPending] = useState<PendingMessage[]>([]);
   const [drafts, setDrafts] = useState<Record<string, AgentDraft>>({});
+  const draftsRef = useRef(drafts);
+  draftsRef.current = drafts;
   const [captures, setCaptures] = useState<CaptureItem[]>([]),
     [credentials, setCredentials] = useState<CredentialVaultItem[]>([]);
   const [variables, setVariables] = useState<GlobalVariableItem[]>([]),
@@ -334,13 +336,18 @@ export function useAgentApp() {
     }, 300);
     return () => {
       clearTimeout(timer);
-      if (
-        context === epoch.current &&
-        sessionRef.current?.workspaceId === auth.workspaceId
-      )
-        void gateway.saveDraft(agentId, currentDraft, auth).catch(() => {});
     };
   }, [currentDraft, agentId, scope, fail]);
+  useEffect(() => {
+    const auth = sessionRef.current,
+      id = agentId,
+      context = epoch.current;
+    return () => {
+      if (auth && id && context === epoch.current && draftsRef.current[id]) {
+        void gateway.saveDraft(id, draftsRef.current[id], auth).catch(() => {});
+      }
+    };
+  }, [agentId, scope]);
   const changeDraft = (value: SetStateAction<string>) => {
     const id = agentId;
     if (
@@ -423,6 +430,7 @@ export function useAgentApp() {
     setPrimaryId(null);
     setShowAgents(false);
     sessionRef.current = next;
+    gateway.api.activate(next);
     setSession(next);
     await saveSession(next);
   };
@@ -498,12 +506,12 @@ export function useAgentApp() {
       const run = await task;
       if (context === epoch.current && selected.id === agentIdRef.current) {
         setRuns((value) => mergeRuns(value, [run]));
-        setPending(await gateway.getPending(selected.id, auth));
+        await refreshPending(selected.id, auth, context);
       }
     } catch (error) {
       fail(error, context);
       if (context === epoch.current && selected.id === agentIdRef.current)
-        setPending(await gateway.getPending(selected.id, auth));
+        await refreshPending(selected.id, auth, context);
       throw error;
     } finally {
       if (context === epoch.current && selected.id === agentIdRef.current)
@@ -519,7 +527,7 @@ export function useAgentApp() {
       const run = await gateway.retryMessage(agentId, pendingId, auth);
       if (context === epoch.current && agentId === agentIdRef.current) {
         setRuns((value) => mergeRuns(value, [run]));
-        setPending(await gateway.getPending(agentId, auth));
+        await refreshPending(agentId, auth, context);
       }
     } catch (error) {
       fail(error, context);
@@ -542,6 +550,23 @@ export function useAgentApp() {
     } finally {
       if (context === epoch.current)
         setControlBusy((value) => (value === run.id ? null : value));
+    }
+  };
+  async function refreshPending(id: string, auth: Session, context: number) {
+    const outbox = await gateway.getPending(id, auth);
+    if (context === epoch.current && id === agentIdRef.current)
+      setPending(outbox);
+  }
+  const discardPending = async (pendingId: string) => {
+    const auth = sessionRef.current,
+      id = agentIdRef.current,
+      context = epoch.current;
+    if (!auth || !id) return;
+    try {
+      await gateway.discardPending(id, pendingId, auth);
+      await refreshPending(id, auth, context);
+    } catch (error) {
+      fail(error, context);
     }
   };
   const openFile = async (runId: string, fileId: string) => {
@@ -653,6 +678,7 @@ export function useAgentApp() {
     controlBusy,
     send,
     retry,
+    discardPending,
     control,
     openFile,
     saveProfile,

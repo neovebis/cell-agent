@@ -34,13 +34,15 @@ export class CellApi {
   private persist: (session: Session) => Promise<void>;
   private refreshing = new Map<string, Promise<Session>>();
   private generation = 0;
+  private blocked = false;
+  private activeSession?: Session;
   constructor(
     config: ApiConfiguration,
     fetcher: typeof fetch = fetch,
     persist: (session: Session) => Promise<void> = async () => {},
   ) {
     this.config = config;
-    this.fetcher = fetcher;
+    this.fetcher = fetcher.bind(globalThis);
     this.persist = persist;
     for (const address of [config.apiUrl, config.supabaseUrl]) {
       const url = new URL(address);
@@ -58,6 +60,11 @@ export class CellApi {
   }
   invalidate() {
     this.generation++;
+    this.blocked = true;
+  }
+  activate(session: Session) {
+    this.activeSession = session;
+    this.blocked = false;
   }
 
   private async json(
@@ -133,6 +140,7 @@ export class CellApi {
   }
 
   async signIn(email: string, password: string): Promise<Session> {
+    const generation = this.generation;
     const data = await this.json(
       `${this.config.supabaseUrl}/auth/v1/token?grant_type=password`,
       {
@@ -144,10 +152,18 @@ export class CellApi {
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       },
     );
-    return this.sessionFrom(data);
+    if (generation !== this.generation) throw new SessionExpiredError();
+    const session = this.sessionFrom(data);
+    this.activate(session);
+    return session;
   }
 
   async refresh(session: Session): Promise<void> {
+    if (
+      this.blocked ||
+      (this.activeSession && this.activeSession.userId !== session.userId)
+    )
+      throw new SessionExpiredError();
     if (!session.refreshToken || !session.userId)
       throw new SessionExpiredError();
     const key = session.userId;
@@ -198,6 +214,14 @@ export class CellApi {
     options: RequestOptions = {},
   ): Promise<any> {
     const generation = this.generation;
+    if (
+      this.blocked ||
+      (this.activeSession &&
+        (this.activeSession.userId !== session.userId ||
+          (options.workspace !== false &&
+            this.activeSession.workspaceId !== session.workspaceId)))
+    )
+      throw new SessionExpiredError();
     if (!path.startsWith('/') || path.startsWith('//') || path.includes('://'))
       throw new Error('Caminho de API inválido.');
     if (!session.accessToken || !session.userId)

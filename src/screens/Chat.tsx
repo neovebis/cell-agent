@@ -71,6 +71,7 @@ type Props = {
   onActivity: () => void;
   onPrimary: (agent: Agent) => Promise<void>;
   onRetry: (pendingId: string) => Promise<void>;
+  onDiscard: (pendingId: string) => Promise<void>;
   onControl: (run: AgentRun, operation: RunOperation) => Promise<void>;
   onFile: (runId: string, fileId: string) => Promise<void>;
 };
@@ -1026,6 +1027,23 @@ export function ChatScreen(props: Props) {
               agentName={agent.name}
               avatar={agent.avatar}
             />
+            {item.pendingId && item.status === 'failed' && (
+              <View style={{ alignItems: 'flex-end', paddingBottom: 6 }}>
+                <Txt size={12} color={C.error}>
+                  {item.error || 'O envio não ficou confirmado.'}
+                </Txt>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={props.busy}
+                  onPress={() => void props.onDiscard(item.pendingId!)}
+                  style={{ padding: 12, minHeight: 44 }}
+                >
+                  <Txt size={12} color={C.muted}>
+                    Remover envio local
+                  </Txt>
+                </Pressable>
+              </View>
+            )}
             {item.pendingId && item.status === 'failed' && (
               <Pressable
                 accessibilityRole="button"

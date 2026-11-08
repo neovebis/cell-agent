@@ -230,6 +230,7 @@ function Root() {
               onActivity={() => setTab('Atividade')}
               onPrimary={app.makePrimary}
               onRetry={app.retry}
+              onDiscard={app.discardPending}
               onControl={app.control}
               onFile={app.openFile}
             />

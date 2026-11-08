@@ -429,3 +429,75 @@ test('histórico preserva os metadados de ficheiros gerados recebidos do serviç
     generatedFiles,
   );
 });
+
+test('uma operação preparada antes do logout não pode iniciar um POST depois de sair', async () => {
+  let release,
+    requested = false;
+  const store = memoryStore(),
+    originalGet = store.get;
+  store.get = async (key) => {
+    if (key.includes('pending:'))
+      await new Promise((resolve) => {
+        release = resolve;
+      });
+    return originalGet(key);
+  };
+  const api = new CellApi(config, async () => {
+    requested = true;
+    return response({ run: run() });
+  });
+  const client = new CellClient(api, store),
+    auth = session();
+  const sending = client.createRun('workflow-one', 'Olá', [], auth);
+  while (!release) await new Promise((resolve) => setTimeout(resolve, 1));
+  const logout = client.clearLocalAccount(auth);
+  release();
+  await assert.rejects(sending, SessionExpiredError);
+  await logout;
+  assert.equal(requested, false);
+});
+
+test('mudar de conta impede pedidos tardios da conta anterior', async () => {
+  let requested = false;
+  const api = new CellApi(config, async () => {
+    requested = true;
+    return response({ ok: true });
+  });
+  api.activate(session({ userId: 'user-two' }));
+  await assert.rejects(
+    api.request('/api/agents/runs', session()),
+    SessionExpiredError,
+  );
+  assert.equal(requested, false);
+});
+
+test('remover um envio falhado é local e não cancela missões no serviço', async () => {
+  const auth = session(),
+    store = memoryStore();
+  let requested = false;
+  await store.set(scopeKey(auth) + 'pending:workflow-one', [
+    { id: 'failed', workflowId: 'workflow-one', status: 'failed' },
+  ]);
+  const client = new CellClient(
+    new CellApi(config, async () => {
+      requested = true;
+      return response({});
+    }),
+    store,
+  );
+  await client.discardPending('workflow-one', 'failed', auth);
+  assert.deepEqual(await client.getPending('workflow-one', auth), []);
+  assert.equal(requested, false);
+});
+
+test('o transporte funciona com o contexto exigido pelo fetch do navegador', async () => {
+  function browserFetch() {
+    if (this && this !== globalThis) throw new TypeError('Illegal invocation');
+    return Promise.resolve(response({ ok: true }));
+  }
+  const result = await new CellApi(config, browserFetch).request(
+    '/api/agents/runs',
+    session(),
+  );
+  assert.equal(result.ok, true);
+});

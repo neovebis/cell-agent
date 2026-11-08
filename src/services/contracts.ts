@@ -228,6 +228,7 @@ export function conversationMessages(
       content: item.content,
       createdAt: item.createdAt,
       status: item.status,
+      error: item.error,
       attachments: item.files.map((file) => ({
         name: file.name,
         mimeType: file.mimeType,

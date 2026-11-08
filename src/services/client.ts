@@ -60,12 +60,14 @@ export class CellClient {
   async restoreSession(session: Session): Promise<Session> {
     this.authenticated(session);
     if (!session.refreshToken) throw new SessionExpiredError();
+    this.api.activate(session);
     if (!session.expiresAt || session.expiresAt <= Date.now() / 1000 + 60)
       await this.api.refresh(session);
     return session;
   }
   async clearLocalAccount(session: Session): Promise<void> {
     this.api.invalidate();
+    await Promise.allSettled([...this.locks.values()]);
     await this.store.removePrefix(
       `user:${encodeURIComponent(session.userId || '')}:`,
     );
@@ -289,6 +291,22 @@ export class CellClient {
         scopeKey(session) + 'pending:' + workflowId,
       )) || []
     );
+  }
+  async discardPending(
+    workflowId: string,
+    pendingId: string,
+    session: Session,
+  ): Promise<void> {
+    const key = scopeKey(session) + 'pending:' + workflowId;
+    await this.serial(key, async () => {
+      const current = await this.getPending(workflowId, session);
+      await this.store.set(
+        key,
+        current.filter(
+          (item) => item.id !== pendingId || item.status !== 'failed',
+        ),
+      );
+    });
   }
   private async updatePending(
     item: PendingMessage,
