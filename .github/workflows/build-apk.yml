@@ -71,6 +71,13 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --max-workers=2 --stacktrace
+      - name: Preserve compiled APK candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-agent-native-apk-candidate
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 5
+          if-no-files-found: error
       - name: Verify and package the APK
         env:
           APP_VERSION: ${{ steps.metadata.outputs.version }}
@@ -88,7 +95,7 @@ jobs:
           "$TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee build-output/signature.txt
           keytool -exportcert -keystore android/app/release.keystore -alias "$KEY_ALIAS" -storepass:env STORE_PASS -file "$RUNNER_TEMP/expected-certificate.der"
           EXPECTED=$(sha256sum "$RUNNER_TEMP/expected-certificate.der" | cut -d ' ' -f 1)
-          ACTUAL=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' build-output/signature.txt)
+          ACTUAL=$(node scripts/read-apk-certificate.cjs build-output/signature.txt)
           test "$EXPECTED" = "$ACTUAL"
           "$TOOLS/aapt2" dump badging "$APK" > build-output/manifest.txt
           grep -F "name='com.cellsystem.agent.mobile'" build-output/manifest.txt
@@ -97,7 +104,7 @@ jobs:
           if grep -q 'application-debuggable' build-output/manifest.txt; then echo 'Unexpected debuggable APK'; exit 1; fi
           gh release download v0.2.2 --repo neovebis/cell-agent --pattern '*.apk' --dir "$RUNNER_TEMP/baseline"
           "$TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/baseline/cell-agent-mobile-v0.2.2.apk" > build-output/baseline-signature.txt
-          BASELINE=$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' build-output/baseline-signature.txt)
+          BASELINE=$(node scripts/read-apk-certificate.cjs build-output/baseline-signature.txt)
           UPGRADE=false
           if [ "$BASELINE" = "$ACTUAL" ]; then UPGRADE=true; fi
           jq -n --arg version "$APP_VERSION" --argjson versionCode "$APP_VERSION_CODE" --arg commit "$GITHUB_SHA" --arg certificateSHA256 "$ACTUAL" --argjson canUpdateV022 "$UPGRADE" '{version:$version,versionCode:$versionCode,commit:$commit,certificateSHA256:$certificateSHA256,canUpdateV022:$canUpdateV022}' > build-output/build-info.json
