@@ -63,6 +63,7 @@ const browser = await chromium.launch({
     : {}),
 });
 const verdicts = [];
+const pendingFixtureReleases = new Set();
 async function waitForPainted(locator) {
   await locator.waitFor();
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -181,7 +182,9 @@ try {
           oldModelsRequested = true;
           await new Promise((resolve) => {
             releaseOldModels = resolve;
+            pendingFixtureReleases.add(resolve);
           });
+          pendingFixtureReleases.delete(releaseOldModels);
           return reply({
             models: [{ id: 'old-model', name: 'Catálogo antigo' }],
           });
@@ -379,6 +382,7 @@ try {
       await new Promise((resolve) => setTimeout(resolve, 50));
     assert.ok(oldModelsRequested);
     await page.getByText('Outro modelo · openai', { exact: true }).click();
+    assert.equal(await modelsButton.isEnabled(), true);
     await modelsButton.click();
     await page.getByText('Catálogo atual', { exact: true }).waitFor();
     const oldResponse = page.waitForResponse((response) =>
@@ -448,6 +452,7 @@ try {
     ),
   );
 } finally {
+  for (const release of pendingFixtureReleases) release();
   await browser.close();
   await new Promise((resolve) => server.close(resolve));
 }
