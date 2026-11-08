@@ -2,6 +2,7 @@ node_modules/
 .expo/
 dist/
 build/
+.validation*/
 android/
 ios/
 .env

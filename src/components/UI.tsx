@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { C, R } from '../theme';
 
@@ -32,7 +32,7 @@ export function RoundButton({ icon, onPress, primary, size = 48, label, disabled
 export function Pill({ children, onPress, selected, style }: { children: React.ReactNode; onPress?: () => void; selected?: boolean; style?: ViewStyle }) {
   return <Pressable onPress={onPress} disabled={!onPress} style={[styles.pill, selected && { backgroundColor: C.ink }, style]}><Txt weight="600" size={15} color={selected ? C.white : C.ink}>{children}</Txt></Pressable>;
 }
-export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) { return <View style={[styles.card, style]}>{children}</View>; }
+export function Card({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) { return <View style={[styles.card, style]}>{children}</View>; }
 export function PageTitle({ kicker, title }: { kicker?: string; title: string }) {
   return <View style={{ marginBottom: 30 }}>
     {!!kicker && <Txt size={14} color={C.muted} weight="500" style={{marginBottom: 4}}>{kicker}</Txt>}
