@@ -3,6 +3,12 @@ on:
   push:
     branches: [main, master, 'fix/**', 'release/**']
   workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Optional run containing a compiled APK candidate to verify without rebuilding
+        type: string
+        required: false
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -10,6 +16,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    if: ${{ inputs.candidate_run_id == '' }}
     name: Build signed Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -85,32 +92,76 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
           STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/verify-android-apk.sh
+      - name: Upload installable app
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-agent-mobile-v${{ steps.metadata.outputs.version }}-apk
+          path: build-output/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f android/app/release.keystore
+  verify_candidate:
+    if: ${{ inputs.candidate_run_id != '' }}
+    name: Verify compiled Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Check APK metadata helpers
+        run: npm test
+      - name: Check candidate provenance and download
+        env:
+          SOURCE_RUN_ID: ${{ inputs.candidate_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          APK='android/app/build/outputs/apk/release/app-release.apk'
-          test -s "$APK"
-          TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
-          mkdir -p build-output
-          "$TOOLS/zipalign" -c -P 16 4 "$APK"
-          "$TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee build-output/signature.txt
-          keytool -exportcert -keystore android/app/release.keystore -alias "$KEY_ALIAS" -storepass:env STORE_PASS -file "$RUNNER_TEMP/expected-certificate.der"
-          EXPECTED=$(sha256sum "$RUNNER_TEMP/expected-certificate.der" | cut -d ' ' -f 1)
-          ACTUAL=$(node scripts/read-apk-certificate.cjs build-output/signature.txt)
-          test "$EXPECTED" = "$ACTUAL"
-          "$TOOLS/aapt2" dump badging "$APK" > build-output/manifest.txt
-          grep -F "name='com.cellsystem.agent.mobile'" build-output/manifest.txt
-          grep -F "versionCode='$APP_VERSION_CODE'" build-output/manifest.txt
-          grep -F "versionName='$APP_VERSION'" build-output/manifest.txt
-          if grep -q 'application-debuggable' build-output/manifest.txt; then echo 'Unexpected debuggable APK'; exit 1; fi
-          gh release download v0.2.2 --repo neovebis/cell-agent --pattern '*.apk' --dir "$RUNNER_TEMP/baseline"
-          "$TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/baseline/cell-agent-mobile-v0.2.2.apk" > build-output/baseline-signature.txt
-          BASELINE=$(node scripts/read-apk-certificate.cjs build-output/baseline-signature.txt)
-          UPGRADE=false
-          if [ "$BASELINE" = "$ACTUAL" ]; then UPGRADE=true; fi
-          jq -n --arg version "$APP_VERSION" --argjson versionCode "$APP_VERSION_CODE" --arg commit "$GITHUB_SHA" --arg certificateSHA256 "$ACTUAL" --argjson canUpdateV022 "$UPGRADE" '{version:$version,versionCode:$versionCode,commit:$commit,certificateSHA256:$certificateSHA256,canUpdateV022:$canUpdateV022}' > build-output/build-info.json
-          cp "$APK" "build-output/cell-agent-mobile-v$APP_VERSION.apk"
-          (cd build-output && sha256sum "cell-agent-mobile-v$APP_VERSION.apk" > "cell-agent-mobile-v$APP_VERSION.apk.sha256")
-          cat build-output/build-info.json
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > "$RUNNER_TEMP/candidate-run.json"
+          test "$(jq -r .path "$RUNNER_TEMP/candidate-run.json")" = '.github/workflows/build-apk.yml'
+          SOURCE_COMMIT=$(jq -r .head_sha "$RUNNER_TEMP/candidate-run.json")
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags --depth=1 origin "$SOURCE_COMMIT"
+          git diff --quiet "$SOURCE_COMMIT" HEAD -- . ':!.github/**' ':!tests/**' ':!README.md' ':!scripts/read-apk-certificate.cjs' ':!scripts/verify-android-apk.sh'
+          gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name cell-agent-native-apk-candidate --dir android/app/build/outputs/apk/release
+          test -s android/app/build/outputs/apk/release/app-release.apk
+          echo "APK_SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
+      - name: Read app version
+        id: metadata
+        run: |
+          node -e 'const c=require("./app.json").expo; if(c.version!==require("./package.json").version || !Number.isInteger(c.android.versionCode)) process.exit(1); console.log("version="+c.version); console.log("versionCode="+c.android.versionCode)' >> "$GITHUB_OUTPUT"
+      - name: Check expected signing identity
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$KEY_ALIAS" && test -n "$STORE_PASS"
+          umask 077
+          mkdir -p android/app
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          keytool -list -keystore android/app/release.keystore -alias "$KEY_ALIAS" -storepass:env STORE_PASS > /dev/null
+      - name: Verify and package the APK
+        env:
+          APP_VERSION: ${{ steps.metadata.outputs.version }}
+          APP_VERSION_CODE: ${{ steps.metadata.outputs.versionCode }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/verify-android-apk.sh
       - name: Upload installable app
         uses: actions/upload-artifact@v4
         with:
