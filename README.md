@@ -48,4 +48,4 @@ A workflow Validate CELL AGENT instala e verifica apenas este repositório, expo
 
 O build UI isolado usa as variáveis de teste e a pasta build/test-web. O bundle de produto usa a configuração normal e fica separado. Evidência e screenshots ficam nos artefactos temporários da execução, não na fonte. Estes testes verificam o cliente e os contratos; não certificam o funcionamento dos executores de produção nem substituem o ensaio num dispositivo Android/iOS.
 
-A workflow de APK continua separada. Publicar uma release ou produzir um APK de atualização exige a chave de assinatura correspondente à versão instalada.
+A workflow de APK continua separada e produz um APK release assinado, checksum, manifesto e metadados de assinatura nos artefactos, sem publicar releases automaticamente. Exige os GitHub Secrets KEYSTORE_BASE64, KEYSTORE_ALIAS, KEYSTORE_PASSWORD e KEY_PASSWORD; nunca gera uma chave de substituição durante o build. Compara o certificado com o APK v0.2.2 e regista se permite atualização direta. Produzir um APK de atualização exige a chave de assinatura correspondente à versão instalada.
