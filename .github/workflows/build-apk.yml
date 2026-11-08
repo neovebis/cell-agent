@@ -41,6 +41,7 @@ jobs:
       - name: Install and check the app
         run: |
           npm ci --no-audit --no-fund
+          npx expo install --check
           npm run typecheck
           npm test
       - name: Read app version

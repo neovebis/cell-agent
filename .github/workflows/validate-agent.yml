@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - name: Install app dependencies
         run: npm ci --no-audit --no-fund
+      - name: Check Expo SDK compatibility
+        run: npx expo install --check
       - name: Check types and protocol contracts
         run: |
           npm run typecheck
