@@ -63,6 +63,20 @@ const browser = await chromium.launch({
     : {}),
 });
 const verdicts = [];
+async function waitForPainted(locator) {
+  await locator.waitFor();
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const painted = await locator.evaluate((element) => {
+      if (!element.getBoundingClientRect().height) return false;
+      for (let current = element; current; current = current.parentElement)
+        if (Number(getComputedStyle(current).opacity) < 0.99) return false;
+      return true;
+    });
+    if (painted) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.fail('The response stayed transparent after its entrance animation.');
+}
 try {
   for (const viewport of [
     { width: 1280, height: 900, name: 'desktop' },
@@ -78,6 +92,8 @@ try {
       submissions = [];
     let profileRevision = 1,
       downloadRequests = 0;
+    let releaseOldModels;
+    let oldModelsRequested = false;
     let profile = {
       provider: 'google',
       model: 'fixture-model',
@@ -157,8 +173,21 @@ try {
       if (url.pathname === '/api/credentials')
         return reply([
           { id: 'model-key', name: 'Modelo de teste', provider: 'google' },
+          { id: 'other-model-key', name: 'Outro modelo', provider: 'openai' },
           { id: 'service-key', name: 'Serviço de teste', provider: 'slack' },
         ]);
+      if (url.pathname === '/api/credentials/models') {
+        if (url.searchParams.get('id') === 'model-key') {
+          oldModelsRequested = true;
+          await new Promise((resolve) => {
+            releaseOldModels = resolve;
+          });
+          return reply({
+            models: [{ id: 'old-model', name: 'Catálogo antigo' }],
+          });
+        }
+        return reply({ models: [{ id: 'new-model', name: 'Catálogo atual' }] });
+      }
       if (url.pathname === '/api/variables')
         return reply([{ id: 'parameter', name: 'PARAM' }]);
       if (url.pathname === '/api/agents/profile') {
@@ -262,6 +291,8 @@ try {
       if (message.type() === 'error') errors.push(message.text());
     });
     await page.goto(origin, { waitUntil: 'networkidle' });
+    assert.equal(page.url(), origin + '/');
+    assert.match(await page.title(), /CELL AGENT/i);
     await page
       .getByLabel('Email', { exact: true })
       .fill('test@example.invalid');
@@ -300,6 +331,9 @@ try {
     await page
       .getByText('Documento preparado.', { exact: true })
       .waitFor({ timeout: 20000 });
+    await waitForPainted(
+      page.getByText('Documento preparado.', { exact: true }),
+    );
     await page
       .getByRole('button', { name: 'Descarregar relatorio.pdf', exact: true })
       .waitFor();
@@ -334,6 +368,47 @@ try {
     await page.screenshot({
       path: join(evidence, viewport.name + '-capabilities.png'),
     });
+    await page.getByRole('button', { name: 'Configurar', exact: true }).click();
+    await page.getByText('Modelo', { exact: true }).click();
+    const modelsButton = page.getByRole('button', {
+      name: 'Consultar modelos disponíveis ↗',
+      exact: true,
+    });
+    await modelsButton.click();
+    for (let attempt = 0; attempt < 100 && !oldModelsRequested; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(oldModelsRequested);
+    await page.getByText('Outro modelo · openai', { exact: true }).click();
+    await modelsButton.click();
+    await page.getByText('Catálogo atual', { exact: true }).waitFor();
+    const oldResponse = page.waitForResponse((response) =>
+      response.url().includes('/api/credentials/models?id=model-key&'),
+    );
+    releaseOldModels();
+    await oldResponse;
+    await page.waitForTimeout(100);
+    assert.equal(
+      await page.getByText('Catálogo antigo', { exact: true }).count(),
+      0,
+    );
+    assert.equal(
+      await page.getByText('Catálogo atual', { exact: true }).count(),
+      1,
+    );
+    await page
+      .getByRole('button', { name: 'Fechar configurações', exact: true })
+      .click();
+    await page.getByText('Perfil', { exact: true }).click();
+    await page.getByText('Avançado', { exact: true }).click();
+    await page.getByText('Segurança', { exact: true }).click();
+    await page
+      .getByText('Dados separados por conta', { exact: true })
+      .waitFor();
+    await page.getByText('Endpoints', { exact: true }).click();
+    await page
+      .getByText(apiOrigin + '/api/agents/runs', { exact: true })
+      .waitFor();
+    await page.getByRole('button', { name: 'Fechar', exact: true }).click();
     await page.getByText('Chat', { exact: true }).click();
     await composer.waitFor();
     assert.equal(await composer.inputValue(), 'Rascunho preservado');
@@ -353,6 +428,8 @@ try {
       generatedFile: true,
       grantsPreserved: true,
       draftPreserved: true,
+      modelCatalogRace: true,
+      configuredEndpoints: true,
       consoleErrors: errors.length,
     });
     await context.close();

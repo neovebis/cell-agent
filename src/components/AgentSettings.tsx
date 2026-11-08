@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -63,11 +63,14 @@ export function AgentSettings({
     model: '',
   });
   const [grants, setGrants] = useState<AgentGrants>(emptyGrants);
+  const modelRequest = useRef(0);
   const [saving, setSaving] = useState(false),
     [loadingModels, setLoadingModels] = useState(false);
   const [models, setModels] = useState<{ id: string; name: string }[]>([]),
     [search, setSearch] = useState('');
   useEffect(() => {
+    modelRequest.current++;
+    setLoadingModels(false);
     if (!visible) return;
     setTab(initialTab);
     setConfig(
@@ -86,6 +89,9 @@ export function AgentSettings({
     );
     setGrants(profile?.grants || emptyGrants());
     setModels([]);
+    return () => {
+      modelRequest.current++;
+    };
   }, [visible, agent.id, profile, initialTab]);
   const toggleList = (
     key: 'executeNodes' | 'credentialIds' | 'variableNames',
@@ -234,6 +240,8 @@ export function AgentSettings({
                             : credential.provider,
                         model: '',
                       }));
+                      modelRequest.current++;
+                      setLoadingModels(false);
                       setModels([]);
                       setSearch('');
                     }}
@@ -264,19 +272,25 @@ export function AgentSettings({
                 accessibilityRole="button"
                 disabled={!config.credentialId || loadingModels}
                 onPress={async () => {
+                  const requestId = ++modelRequest.current;
                   setLoadingModels(true);
                   try {
-                    setModels(
-                      await onModels(config.credentialId!, config.provider),
+                    const available = await onModels(
+                      config.credentialId!,
+                      config.provider,
                     );
+                    if (requestId === modelRequest.current)
+                      setModels(available);
                   } catch (error) {
-                    onError(
-                      error instanceof Error
-                        ? error.message
-                        : 'Falha ao consultar modelos.',
-                    );
+                    if (requestId === modelRequest.current)
+                      onError(
+                        error instanceof Error
+                          ? error.message
+                          : 'Falha ao consultar modelos.',
+                      );
                   } finally {
-                    setLoadingModels(false);
+                    if (requestId === modelRequest.current)
+                      setLoadingModels(false);
                   }
                 }}
                 style={{

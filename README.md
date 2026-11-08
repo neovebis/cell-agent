@@ -22,7 +22,7 @@ Capture é uma biblioteca local. Os ficheiros são copiados para a área da app,
 
 ## Contratos e limites existentes
 
-O chat aceita até quatro ficheiros, 2 MiB por ficheiro e 4 MiB por mensagem. Texto/código tem limite de 192 KiB; a mensagem tem limite de 8 KB. Formatos: texto/código, PDF, PNG, JPEG, WebP e GIF, sujeitos também à compatibilidade do modelo. Vídeo, áudio e documentos Office não são enviados como anexos deste endpoint.
+O contrato do serviço aceita até quatro ficheiros, 2 MiB por ficheiro e 4 MiB por mensagem; o seletor móvel desta versão envia um anexo por mensagem. Texto/código tem limite de 192 KiB; a mensagem tem limite de 8 KB. Formatos: texto/código, PDF, PNG, JPEG, WebP e GIF, sujeitos também à compatibilidade do modelo. Vídeo, áudio e documentos Office não são enviados como anexos deste endpoint.
 
 Os Cells Artcraft atuam pelas instâncias e fontes já configuradas no workflow. A app não duplica os motores, não instala executáveis no telemóvel e não anuncia as aplicações Artcraft como editores completos. Disponibilidade, operações e limites dependem dos contratos do serviço e dos executores configurados.
 

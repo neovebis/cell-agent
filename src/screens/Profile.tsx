@@ -1,12 +1,7 @@
 import React, { useState } from 'react';
-import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { apiBaseUrl, supabaseUrl } from '../services/gateway';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   Card,
   Icon,
@@ -60,7 +55,9 @@ export function ProfileScreen({
   };
 
   const handleCopyEndpoint = (label: string, url: string) => {
-    Alert.alert(label, url);
+    void Clipboard.setStringAsync(url)
+      .then(() => onInfo(label + ' copiado.'))
+      .catch(() => onInfo('Não foi possível copiar.'));
   };
 
   return (
@@ -276,8 +273,8 @@ export function ProfileScreen({
                     Cofre de Credenciais (Vault)
                   </Txt>
                   <Txt size={12} color={C.muted}>
-                    Chaves de API cifradas em AES-GCM autorizadas para os teus
-                    agentes.
+                    Credenciais disponíveis no cofre deste espaço. A app recebe
+                    apenas metadados, nunca as chaves.
                   </Txt>
                   {credentials.length > 0 ? (
                     credentials.map((cred) => (
@@ -355,159 +352,90 @@ export function ProfileScreen({
               </View>
             )}
 
-            {/* SECTION 2: SEGURANÇA (Multi-Tenancy, RLS, HMAC) */}
+            {/* Proteções do cliente e autorizações no serviço */}
             {activeSection === 'seguranca' && (
               <View style={{ gap: 12 }}>
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <Icon name="shield-checkmark" size={18} color={C.success} />
-                    <Txt weight="700" size={15}>
-                      Row-Level Security (RLS) Ativo
+                {(
+                  [
+                    {
+                      title: 'Sessão renovável',
+                      icon: 'lock-closed-outline',
+                      text: 'Os tokens ficam no armazenamento protegido do dispositivo. No preview web, a sessão fica limitada a este separador.',
+                    },
+                    {
+                      title: 'Dados separados por conta',
+                      icon: 'person-circle-outline',
+                      text: 'Conversas, rascunhos e capturas ficam associados ao utilizador e ao espaço selecionado. Sair limpa os dados locais desta conta.',
+                    },
+                    {
+                      title: 'Autorizações no serviço',
+                      icon: 'shield-checkmark-outline',
+                      text: 'Os pedidos incluem a sessão e o workspace. O serviço verifica as permissões antes de executar ferramentas ou usar credenciais.',
+                    },
+                    {
+                      title: 'Downloads privados',
+                      icon: 'document-lock-outline',
+                      text: 'A app pede uma ligação assinada ao abrir um ficheiro e aceita apenas o Storage configurado. As ligações temporárias não são guardadas na cache.',
+                    },
+                  ] as const
+                ).map((item) => (
+                  <Card key={item.title} style={{ padding: 16, gap: 8 }}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        gap: 8,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Icon name={item.icon} size={19} />
+                      <Txt size={15} weight="700">
+                        {item.title}
+                      </Txt>
+                    </View>
+                    <Txt size={13} color={C.muted}>
+                      {item.text}
                     </Txt>
-                  </View>
-                  <Txt size={13} color={C.muted}>
-                    Todas as consultas no Supabase utilizam o token JWT do
-                    utilizador com isolamento estrito por workspace_id.
-                  </Txt>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <Icon name="speedometer-outline" size={18} />
-                    <Txt weight="700" size={15}>
-                      Rate Limiting de Produção
-                    </Txt>
-                  </View>
-                  <Txt size={13} color={C.muted}>
-                    Proteção DDoS com limite de 60 requisições por minuto por IP
-                    e token de autenticação.
-                  </Txt>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <Icon name="finger-print-outline" size={18} />
-                    <Txt weight="700" size={15}>
-                      Assinatura HMAC SHA-256
-                    </Txt>
-                  </View>
-                  <Txt size={13} color={C.muted}>
-                    Webhooks e chamadas externas são validadas
-                    criptograficamente contra falsificação.
-                  </Txt>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    <Icon name="globe-outline" size={18} />
-                    <Txt weight="700" size={15}>
-                      Filtro Anti-SSRF
-                    </Txt>
-                  </View>
-                  <Txt size={13} color={C.muted}>
-                    Bloqueio rigoroso de acessos a IPs privados, portas internas
-                    e metadados de cloud.
-                  </Txt>
-                </Card>
+                  </Card>
+                ))}
               </View>
             )}
-
             {/* SECTION 3: ENDPOINTS DE PRODUÇÃO */}
             {activeSection === 'endpoints' && (
               <View style={{ gap: 12 }}>
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <Txt weight="700" size={14}>
-                    Webhook Ingress URL
-                  </Txt>
-                  <Txt size={12} color={C.muted} numberOfLines={2}>
-                    https://cell-griot.pages.dev/api/webhooks/
-                    {currentWorkspace.id}
-                  </Txt>
-                  <Pressable
-                    onPress={() =>
-                      handleCopyEndpoint(
-                        'Webhook URL',
-                        `https://cell-griot.pages.dev/api/webhooks/${currentWorkspace.id}`,
-                      )
-                    }
-                    style={styles.copyBtn}
-                  >
-                    <Icon name="copy-outline" size={15} />
-                    <Txt size={12} weight="600">
-                      Ver Endpoint Completo
+                {[
+                  ['Serviço CELL', apiBaseUrl],
+                  ['Autenticação e dados', supabaseUrl],
+                  ['Tarefas', apiBaseUrl + '/api/agents/runs'],
+                  [
+                    'Configuração do agente',
+                    apiBaseUrl + '/api/agents/profile',
+                  ],
+                  ['Controlo de tarefas', apiBaseUrl + '/api/agents/control'],
+                ].map(([label, url]) => (
+                  <Card key={label} style={{ padding: 16, gap: 8 }}>
+                    <Txt size={14} weight="700">
+                      {label}
                     </Txt>
-                  </Pressable>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <Txt weight="700" size={14}>
-                    Execução Síncrona do Grafo
-                  </Txt>
-                  <Txt size={12} color={C.muted} numberOfLines={2}>
-                    https://cell-griot.pages.dev/api/execute
-                  </Txt>
-                  <Pressable
-                    onPress={() =>
-                      handleCopyEndpoint(
-                        'Execute URL',
-                        'https://cell-griot.pages.dev/api/execute',
-                      )
-                    }
-                    style={styles.copyBtn}
-                  >
-                    <Icon name="copy-outline" size={15} />
-                    <Txt size={12} weight="600">
-                      Ver Endpoint Completo
+                    <Txt size={12} color={C.muted}>
+                      {url}
                     </Txt>
-                  </Pressable>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <Txt weight="700" size={14}>
-                    Execução de Agentes (Central Agent)
-                  </Txt>
-                  <Txt size={12} color={C.muted} numberOfLines={2}>
-                    https://cell-griot.pages.dev/api/agents/runs
-                  </Txt>
-                  <Pressable
-                    onPress={() =>
-                      handleCopyEndpoint(
-                        'Agents URL',
-                        'https://cell-griot.pages.dev/api/agents/runs',
-                      )
-                    }
-                    style={styles.copyBtn}
-                  >
-                    <Icon name="copy-outline" size={15} />
-                    <Txt size={12} weight="600">
-                      Ver Endpoint Completo
-                    </Txt>
-                  </Pressable>
-                </Card>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => handleCopyEndpoint(label, url)}
+                      style={{
+                        minHeight: 44,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <Icon name="copy-outline" size={16} />
+                      <Txt size={12} weight="600">
+                        Copiar endereço
+                      </Txt>
+                    </Pressable>
+                  </Card>
+                ))}
               </View>
             )}
           </ScrollView>
@@ -632,17 +560,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
-  },
-  copyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    backgroundColor: C.surface2,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginTop: 4,
   },
   logoutButton: {
     backgroundColor: C.ink,
