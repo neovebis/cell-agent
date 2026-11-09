@@ -1,12 +1,13 @@
-# CELL AGENT Mobile · v0.3.0
+# CELL AGENT Mobile · v0.3.1
 
 Cliente React Native + Expo do CELL SYSTEM. Esta versão altera apenas a app móvel. Usa os contratos já existentes de Supabase Auth/REST e da API Cell Griot; não contém backend, migrações, alterações ao site ou deploys desses serviços.
 
 ## Experiência da app
 
-- Abre no agente central de um workflow. A estrela na lista define o agente principal deste utilizador e workspace, apenas no dispositivo.
+- Abre no agente central de um workflow. A preferência de agente principal fica no menu da conversa e é guardada apenas neste dispositivo, por utilizador e workspace.
+- O cabeçalho da conversa mostra apenas o emote e o nome. Tocar na cápsula ou na zona direita abre opções de modelo, capacidades e tarefas; a zona esquerda regressa à lista. As áreas de toque mantêm rótulos de acessibilidade.
 - Mostra uma conversa por workflow, com mensagens e execuções identificadas pelos IDs reais do serviço. Nós especialistas são capacidades do central, não conversas independentes.
-- Apresenta fila, execução, pausa, aprovação, conclusão, falha e cancelamento. A app usa os controlos e o tick já existentes; a continuidade sem a app aberta depende do scheduler configurado no serviço.
+- O chat apresenta texto e ficheiros recebidos do serviço, com um indicador discreto enquanto aguarda a resposta. Fila, métricas e controlos ficam em Tarefas, acessível pelo menu. Um pedido de aprovação ou pausa mostra uma ligação para revisão explícita. A app usa os controlos e o tick já existentes; a continuidade sem a app aberta depende do scheduler configurado no serviço.
 - Permite aprovar a operação exata, recusar/cancelar, pausar e retomar. Uma aprovação alterada é recusada antes de submeter o pedido.
 - Lista os Cells e Skills realmente presentes no workflow e as credenciais disponíveis no cofre. A autorização é imposta pelo servidor. A presença de uma credencial não é anunciada como prova de ligação ao serviço.
 - As configurações de modelo, credenciais e permissões são guardadas apenas por ação explícita do utilizador. Pertencem ao agente do workflow e são partilhadas entre os clientes que o utilizam.
@@ -18,7 +19,7 @@ A sessão inclui renovação de tokens e coordena renovações concorrentes. Em 
 
 Rascunhos e anexos pendentes sobrevivem à navegação. Um envio falhado conserva a chave de idempotência, permitindo repetir o mesmo pedido sem criar outra missão. A app não repete automaticamente pedidos cujo resultado de rede seja desconhecido.
 
-Capture é uma biblioteca local. Os ficheiros são copiados para a área da app, sem os marcar como sincronizados. Sair limpa os dados e capturas locais desta conta. A versão anterior exige novo login porque não guardava refresh tokens; a app não importa caches antigas sem identidade verificável.
+Capture é uma biblioteca local. Os ficheiros são copiados para a área da app, sem os marcar como sincronizados. Sair limpa os dados e capturas locais desta conta. As versões 0.2.x exigem novo login porque não guardavam refresh tokens; a app não importa caches antigas sem identidade verificável.
 
 ## Contratos e limites existentes
 
@@ -47,5 +48,7 @@ O preview web pode estar sujeito às políticas CORS já configuradas no serviç
 A workflow Validate CELL AGENT instala e verifica apenas este repositório, exporta bundles Android/web e testa o cliente em desktop e viewport móvel. Os testes UI usam exclusivamente hosts reservados .example interceptados no navegador; bloqueiam qualquer pedido externo inesperado. Não iniciam sessões reais, não executam motores, não gastam créditos de modelos e não modificam dados de produção.
 
 O build UI isolado usa as variáveis de teste e a pasta build/test-web. O bundle de produto usa a configuração normal e fica separado. Evidência e screenshots ficam nos artefactos temporários da execução, não na fonte. Estes testes verificam o cliente e os contratos; não certificam o funcionamento dos executores de produção nem substituem o ensaio num dispositivo Android/iOS.
+
+A v0.3.1 mantém a chave de assinatura e o armazenamento da v0.3.0, permitindo atualizar sem desinstalar nem limpar os dados locais.
 
 A workflow de APK continua separada e produz um APK release assinado, checksum, manifesto e metadados de assinatura nos artefactos, sem publicar releases automaticamente. Exige os GitHub Secrets KEYSTORE_BASE64, KEYSTORE_ALIAS, KEYSTORE_PASSWORD e KEY_PASSWORD; nunca gera uma chave de substituição durante o build. Compara o certificado com o APK v0.2.2 e regista se permite atualização direta. Produzir um APK de atualização exige a chave de assinatura correspondente à versão instalada.

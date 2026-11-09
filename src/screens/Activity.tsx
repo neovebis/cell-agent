@@ -41,9 +41,9 @@ export function ActivityScreen({
   return (
     <ScrollView
       contentContainerStyle={{
-        padding: 24,
-        paddingTop: 36,
-        paddingBottom: 135,
+        padding: 20,
+        paddingTop: 24,
+        paddingBottom: 104,
         gap: 14,
       }}
     >

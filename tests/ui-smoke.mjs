@@ -82,6 +82,7 @@ try {
   for (const viewport of [
     { width: 1280, height: 900, name: 'desktop' },
     { width: 390, height: 844, name: 'mobile' },
+    { width: 320, height: 760, name: 'narrow' },
   ]) {
     const context = await browser.newContext({
       viewport: { width: viewport.width, height: viewport.height },
@@ -95,6 +96,13 @@ try {
       downloadRequests = 0;
     let releaseOldModels;
     let oldModelsRequested = false;
+    let releaseTick;
+    const tickGate = new Promise((resolve) => {
+      releaseTick = resolve;
+      pendingFixtureReleases.add(resolve);
+    });
+    const friendlyAnswer =
+      'Claro. Estou aqui para te ouvir. Podemos ir com calma, sem pressa de resolver tudo de uma vez. Conta-me o que estás a sentir ou o que aconteceu hoje e vamos pensar nisso juntos.';
     let profile = {
       provider: 'google',
       model: 'fixture-model',
@@ -170,7 +178,17 @@ try {
         return reply([
           { id: 'space-one', name: 'Espaço de teste', tier: 'free' },
         ]);
-      if (url.pathname === '/rest/v1/cells_workflows') return reply([workflow]);
+      if (url.pathname === '/rest/v1/cells_workflows')
+        return reply([
+          workflow,
+          {
+            ...workflow,
+            id: 'workflow-two',
+            name: 'Griotinho',
+            description: 'O teu assistente pessoal',
+            graph: { nodes: [], edges: [] },
+          },
+        ]);
       if (url.pathname === '/api/credentials')
         return reply([
           { id: 'model-key', name: 'Modelo de teste', provider: 'google' },
@@ -208,7 +226,9 @@ try {
           if (existing) return reply({ run: existing }, 202);
           const time = new Date().toISOString();
           const run = {
-            id: '00000000-0000-4000-8000-000000000001',
+            id:
+              '00000000-0000-4000-8000-' +
+              String(runs.length + 1).padStart(12, '0'),
             workflowId: 'workflow-one',
             key: body.idempotencyKey,
             message: body.message,
@@ -230,17 +250,39 @@ try {
       }
       if (url.pathname === '/api/agents/tick') {
         const run = runs.find((run) => run.id === body.runId);
-        if (run?.status === 'queued')
-          Object.assign(run, {
-            status: 'waiting_approval',
-            updatedAt: new Date().toISOString(),
-            approvalHash: 'a'.repeat(64),
-            approval: {
-              reason: 'Confirma a operação neste PDF.',
-              action: { name: 'node.test', arguments: { nodeId: 'pdf-node' } },
-            },
-            modelCalls: 1,
-          });
+        if (run?.status === 'queued') {
+          if (run.message === 'Revê o meu PDF.') {
+            await tickGate;
+            pendingFixtureReleases.delete(releaseTick);
+            Object.assign(run, {
+              status: 'waiting_approval',
+              updatedAt: new Date().toISOString(),
+              approvalHash: 'a'.repeat(64),
+              approval: {
+                reason: 'Confirma a operação neste PDF.',
+                action: {
+                  name: 'node.test',
+                  arguments: { nodeId: 'pdf-node' },
+                },
+              },
+              modelCalls: 1,
+            });
+          } else if (run.message === 'Falha controlada.') {
+            Object.assign(run, {
+              status: 'failed',
+              updatedAt: new Date().toISOString(),
+              summary: 'Detalhe técnico que pertence apenas à atividade',
+              modelCalls: 1,
+            });
+          } else {
+            Object.assign(run, {
+              status: 'success',
+              updatedAt: new Date().toISOString(),
+              answer: friendlyAnswer,
+              modelCalls: 1,
+            });
+          }
+        }
         return reply({ run }, 202);
       }
       if (url.pathname === '/api/agents/control') {
@@ -321,30 +363,146 @@ try {
       );
       throw error;
     });
+    const header = page.getByTestId('chat-header');
+    const composeBar = page.getByTestId('chat-composer');
+    const back = page.getByRole('button', {
+      name: 'Voltar aos agentes',
+      exact: true,
+    });
+    const options = page.getByRole('button', {
+      name: 'Opções do agente',
+      exact: true,
+    });
+    assert.equal(await back.innerText(), '');
+    assert.equal(await options.innerText(), '');
+    for (const zone of [back, options]) {
+      const box = await zone.boundingBox();
+      assert.ok(box.width >= 44 && box.height >= 44);
+    }
+    assert.equal(
+      await header.getByText('Capacidades', { exact: true }).count(),
+      0,
+    );
+    assert.equal(await header.getByText('Tarefas', { exact: true }).count(), 0);
+    assert.ok(!(await composeBar.innerText()).includes('Agente principal'));
+    assert.ok((await header.boundingBox()).height <= 64);
+    assert.ok((await composeBar.boundingBox()).height <= 64);
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-empty.png'),
+    });
+    await back.click();
+    await page.getByText('Agentes', { exact: true }).waitFor();
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Agente principal', exact: true })
+        .count(),
+      0,
+    );
+    assert.equal(
+      await page
+        .getByRole('button', {
+          name: 'Definir como agente principal',
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    const openChat = page.getByRole('button', {
+      name: 'Abrir chat de Agente principal',
+      exact: true,
+    });
+    assert.ok((await openChat.boundingBox()).height <= 90);
+    await page.getByText('Griotinho', { exact: true }).waitFor();
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-agents.png'),
+    });
+    await openChat.click();
+    await options.click();
+    await page.getByTestId('chat-options-menu').waitFor();
+    await page.getByRole('button', { name: 'Tarefas', exact: true }).click();
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Opções de Agente principal', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Capacidades', exact: true })
+      .waitFor();
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-menu.png'),
+    });
+    await page
+      .getByRole('button', { name: 'Fechar opções', exact: true })
+      .click();
+    await composer.fill(
+      'Uma mensagem com várias linhas para verificar que o campo cresce apenas quando é necessário. '.repeat(
+        6,
+      ),
+    );
+    assert.ok((await composeBar.boundingBox()).height <= 132);
+    await composer.fill('');
+    await page.waitForTimeout(100);
+    assert.ok((await composeBar.boundingBox()).height <= 64);
     await composer.fill('Revê o meu PDF.');
     await page
       .getByRole('button', { name: 'Enviar mensagem', exact: true })
       .click();
-    const approve = page.getByRole('button', {
-      name: 'Aprovar operação',
-      exact: true,
-    });
-    await approve.waitFor({ timeout: 20000 });
-    await approve.click();
     await page
-      .getByText('Documento preparado.', { exact: true })
-      .waitFor({ timeout: 20000 });
+      .getByRole('progressbar', {
+        name: 'Agente principal está a responder',
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(await page.getByText('Na fila', { exact: true }).count(), 0);
+    assert.equal(
+      await page.getByText('A trabalhar', { exact: true }).count(),
+      0,
+    );
+    assert.equal(await page.getByText(/ferramentas usadas/).count(), 0);
+    assert.equal(
+      await page.getByText('Documento preparado.', { exact: true }).count(),
+      0,
+    );
+    await waitForPainted(page.getByText('Revê o meu PDF.', { exact: true }));
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-working.png'),
+    });
+    releaseTick();
+    await page
+      .getByRole('button', { name: 'Rever autorização', exact: true })
+      .click();
+    await page.getByText('Operação a autorizar', { exact: true }).waitFor();
+    await page
+      .getByRole('button', { name: 'Aprovar operação', exact: true })
+      .click();
+    await page.getByText('Concluída', { exact: true }).waitFor();
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
     await waitForPainted(
       page.getByText('Documento preparado.', { exact: true }),
+    );
+    assert.equal(await page.getByText('Concluída', { exact: true }).count(), 0);
+    assert.equal(await page.getByText(/ferramentas usadas/).count(), 0);
+    assert.equal(
+      await page
+        .getByRole('progressbar', {
+          name: 'Agente principal está a responder',
+          exact: true,
+        })
+        .count(),
+      0,
     );
     await page
       .getByRole('button', { name: 'Descarregar relatorio.pdf', exact: true })
       .waitFor();
     await page.screenshot({
-      path: join(evidence, viewport.name + '-chat.png'),
+      path: join(evidence, viewport.name + '-files.png'),
     });
     await composer.fill('Rascunho preservado');
-    await page.getByText('Capacidades', { exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Opções do agente', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Capacidades', exact: true })
+      .click();
     await page.getByText('PDF de trabalho', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Configurar', exact: true }).click();
     const cellSwitch = page.getByRole('switch', {
@@ -402,8 +560,23 @@ try {
     await page
       .getByRole('button', { name: 'Fechar configurações', exact: true })
       .click();
-    await page.getByText('Perfil', { exact: true }).click();
+    await page.getByRole('tab', { name: 'Perfil', exact: true }).click();
     await page.getByText('Avançado', { exact: true }).click();
+    for (const label of ['Cofre & Vars', 'Segurança', 'Endpoints']) {
+      const tabText = page
+        .getByRole('button', { name: label, exact: true })
+        .getByText(label, { exact: true });
+      await tabText.scrollIntoViewIfNeeded();
+      const box = await tabText.boundingBox();
+      assert.ok(box.height < 25, label + ' should stay on one line');
+      assert.ok(
+        box.x >= 0 && box.x + box.width <= viewport.width,
+        label + ' should fit the viewport',
+      );
+    }
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-advanced.png'),
+    });
     await page.getByText('Segurança', { exact: true }).click();
     await page
       .getByText('Dados separados por conta', { exact: true })
@@ -413,7 +586,7 @@ try {
       .getByText(apiOrigin + '/api/agents/runs', { exact: true })
       .waitFor();
     await page.getByRole('button', { name: 'Fechar', exact: true }).click();
-    await page.getByText('Chat', { exact: true }).click();
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
     await composer.waitFor();
     assert.equal(await composer.inputValue(), 'Rascunho preservado');
     await page
@@ -422,6 +595,53 @@ try {
     for (let attempt = 0; attempt < 20 && !downloadRequests; attempt++)
       await new Promise((resolve) => setTimeout(resolve, 100));
     assert.equal(downloadRequests, 1);
+    await composer.fill('Quero conversar um pouco.');
+    await page
+      .getByRole('button', { name: 'Enviar mensagem', exact: true })
+      .click();
+    await page
+      .getByText(friendlyAnswer, { exact: true })
+      .waitFor({ timeout: 20000 });
+    await waitForPainted(page.getByText(friendlyAnswer, { exact: true }));
+    assert.equal(await page.getByText('Na fila', { exact: true }).count(), 0);
+    assert.equal(await page.getByText(/ferramentas usadas/).count(), 0);
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-chat.png'),
+    });
+    await composer.fill('Falha controlada.');
+    await page
+      .getByRole('button', { name: 'Enviar mensagem', exact: true })
+      .click();
+    await page
+      .getByText(
+        'Não foi possível concluir este pedido. Tenta novamente ou consulta os detalhes em Tarefas.',
+        { exact: true },
+      )
+      .waitFor({ timeout: 20000 });
+    assert.equal(
+      await page
+        .getByRole('progressbar', {
+          name: 'Agente principal está a responder',
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    assert.equal(
+      await page
+        .getByText('Detalhe técnico que pertence apenas à atividade', {
+          exact: true,
+        })
+        .count(),
+      0,
+    );
+    assert.ok(
+      await page.evaluate(
+        () =>
+          document.documentElement.scrollWidth <=
+          document.documentElement.clientWidth,
+      ),
+    );
     assert.deepEqual(unexpected, []);
     assert.deepEqual(errors, []);
     verdicts.push({
@@ -434,6 +654,12 @@ try {
       draftPreserved: true,
       modelCatalogRace: true,
       configuredEndpoints: true,
+      compactChat: true,
+      hiddenHeaderActions: true,
+      noOperationalCardsInChat: true,
+      approvalStillExplicit: true,
+      failureVisible: true,
+      advancedTabsSingleLine: true,
       consoleErrors: errors.length,
     });
     await context.close();

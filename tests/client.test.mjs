@@ -501,3 +501,56 @@ test('o transporte funciona com o contexto exigido pelo fetch do navegador', asy
   );
   assert.equal(result.ok, true);
 });
+
+test('a conversa aguarda a resposta real sem transformar métricas numa mensagem do agente', () => {
+  const base = {
+    id: 'chat-flow',
+    workflowId: 'workflow-one',
+    message: 'Olá',
+    createdAt: '2026-11-09T10:00:00Z',
+    updatedAt: '2026-11-09T10:00:01Z',
+    summary: '3 ferramentas usadas',
+    modelCalls: 2,
+    toolCalls: 3,
+  };
+  for (const status of ['queued', 'running', 'waiting_approval', 'paused']) {
+    assert.equal(
+      conversationMessages('workflow-one', [{ ...base, status }], []).filter(
+        (message) => message.role === 'assistant',
+      ).length,
+      0,
+    );
+  }
+  const answer = conversationMessages(
+    'workflow-one',
+    [{ ...base, status: 'success', answer: 'Olá, como posso ajudar?' }],
+    [],
+  ).find((message) => message.role === 'assistant');
+  assert.equal(answer.content, 'Olá, como posso ajudar?');
+  const failed = conversationMessages(
+    'workflow-one',
+    [{ ...base, status: 'failed' }],
+    [],
+  ).find((message) => message.role === 'assistant');
+  assert.match(failed.content, /Não foi possível concluir/);
+  assert.ok(!failed.content.includes(base.summary));
+  const file = conversationMessages(
+    'workflow-one',
+    [
+      {
+        ...base,
+        status: 'success',
+        generatedFiles: [
+          {
+            id: 'file',
+            name: 'resumo.pdf',
+            mimeType: 'application/pdf',
+            size: 100,
+          },
+        ],
+      },
+    ],
+    [],
+  ).find((message) => message.role === 'assistant');
+  assert.equal(file.content, 'O ficheiro está pronto.');
+});

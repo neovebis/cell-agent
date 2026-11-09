@@ -56,8 +56,8 @@ export function ConnectorsScreen({
   return (
     <ScrollView
       contentContainerStyle={{
-        padding: 24,
-        paddingTop: 36,
+        padding: 20,
+        paddingTop: 24,
         paddingBottom: 130,
         gap: 14,
       }}
@@ -79,7 +79,7 @@ export function ConnectorsScreen({
         <>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={{ flex: 1 }}>
-              <Txt weight="700" size={17}>
+              <Txt weight="600" size={17}>
                 {agent.name}
               </Txt>
               <Txt color={C.muted} size={12}>
@@ -176,7 +176,7 @@ export function ConnectorsScreen({
                 }
               />
               <View style={{ flex: 1, gap: 4 }}>
-                <Txt weight="700" size={15}>
+                <Txt weight="600" size={15}>
                   {cell.name}
                 </Txt>
                 <Txt color={C.muted} size={12}>
@@ -203,7 +203,7 @@ export function ConnectorsScreen({
           )}
           {(kind === 'Tudo' || kind === 'Conectores') && (
             <>
-              <Txt weight="700" size={15}>
+              <Txt weight="600" size={15}>
                 Serviços configurados
               </Txt>
               {services.map((service) => (

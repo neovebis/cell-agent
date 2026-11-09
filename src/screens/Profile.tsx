@@ -64,9 +64,9 @@ export function ProfileScreen({
     <View style={{ flex: 1, backgroundColor: C.white }}>
       <ScrollView
         contentContainerStyle={{
-          padding: 24,
-          paddingTop: 36,
-          paddingBottom: 135,
+          padding: 20,
+          paddingTop: 24,
+          paddingBottom: 104,
         }}
       >
         <PageTitle kicker="Gestão da Conta & Espaço" title="Perfil" />
@@ -84,7 +84,7 @@ export function ProfileScreen({
             <Icon name="person-outline" color={C.white} size={28} />
           </View>
           <View style={{ flex: 1, gap: 4 }}>
-            <Txt size={20} weight="700">
+            <Txt size={20} weight="600">
               {session?.displayName ?? 'Utilizador'}
             </Txt>
             <Txt size={12} color={C.muted}>
@@ -100,7 +100,7 @@ export function ProfileScreen({
 
         {/* WORKSPACE BAR (Active Workspace Switcher) */}
         <Txt
-          weight="700"
+          weight="600"
           color={C.muted}
           size={12}
           style={{ marginTop: 26, marginBottom: 10, letterSpacing: 0.5 }}
@@ -112,7 +112,7 @@ export function ProfileScreen({
             style={{
               flexDirection: 'row',
               alignItems: 'center',
-              padding: 18,
+              padding: 12,
               gap: 14,
             }}
           >
@@ -123,11 +123,11 @@ export function ProfileScreen({
               <View
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
               >
-                <Txt weight="700" size={16}>
+                <Txt weight="600" size={16}>
                   {currentWorkspace.name}
                 </Txt>
                 <View style={styles.planBadge}>
-                  <Txt size={10} weight="700" color={C.white}>
+                  <Txt size={10} weight="600" color={C.white}>
                     {currentWorkspace.plan || 'CELL'}
                   </Txt>
                 </View>
@@ -149,12 +149,12 @@ export function ProfileScreen({
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 13,
-                padding: 18,
+                padding: 12,
               }}
             >
               <Icon name="options-outline" />
               <View style={{ flex: 1, gap: 3 }}>
-                <Txt weight="700" size={15}>
+                <Txt weight="600" size={15}>
                   Avançado
                 </Txt>
                 <Txt size={12} color={C.muted}>
@@ -171,12 +171,12 @@ export function ProfileScreen({
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 13,
-                padding: 18,
+                padding: 12,
               }}
             >
               <Icon name="notifications-outline" />
               <View style={{ flex: 1, gap: 3 }}>
-                <Txt weight="700" size={15}>
+                <Txt weight="600" size={15}>
                   Alertas de tarefas
                 </Txt>
                 <Txt size={12} color={C.muted}>
@@ -189,7 +189,7 @@ export function ProfileScreen({
 
           {!demo && (
             <Pressable onPress={onSignOut} style={styles.logoutButton}>
-              <Txt color={C.white} weight="700">
+              <Txt color={C.white} weight="600">
                 Sair e limpar dados locais
               </Txt>
             </Pressable>
@@ -208,8 +208,8 @@ export function ProfileScreen({
           style={{
             flex: 1,
             backgroundColor: C.white,
-            padding: 24,
-            paddingTop: 40,
+            padding: 20,
+            paddingTop: 28,
           }}
         >
           <View
@@ -220,12 +220,12 @@ export function ProfileScreen({
               marginBottom: 20,
             }}
           >
-            <View>
-              <Txt size={24} weight="700">
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt size={22} weight="600">
                 Avançado
               </Txt>
               <Txt size={13} color={C.muted}>
-                Cofre, segurança e endpoints técnicos
+                Credenciais, segurança e ligações
               </Txt>
             </View>
             <RoundButton
@@ -235,30 +235,34 @@ export function ProfileScreen({
             />
           </View>
 
-          {/* Navigation Tabs inside Advanced Modal */}
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 18 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0, marginBottom: 14 }}
+            contentContainerStyle={{ gap: 6, paddingBottom: 2 }}
+          >
             <Pill
               selected={activeSection === 'geral'}
               onPress={() => setActiveSection('geral')}
-              style={{ flex: 1 }}
+              style={{ minWidth: 88 }}
             >
               Cofre & Vars
             </Pill>
             <Pill
               selected={activeSection === 'seguranca'}
               onPress={() => setActiveSection('seguranca')}
-              style={{ flex: 1 }}
+              style={{ minWidth: 88 }}
             >
               Segurança
             </Pill>
             <Pill
               selected={activeSection === 'endpoints'}
               onPress={() => setActiveSection('endpoints')}
-              style={{ flex: 1 }}
+              style={{ minWidth: 88 }}
             >
               Endpoints
             </Pill>
-          </View>
+          </ScrollView>
 
           <ScrollView
             style={{ flex: 1 }}
@@ -269,7 +273,7 @@ export function ProfileScreen({
               <View style={{ gap: 18 }}>
                 {/* Credential Vault */}
                 <View style={{ gap: 8 }}>
-                  <Txt weight="700" size={14}>
+                  <Txt weight="600" size={14}>
                     Cofre de Credenciais (Vault)
                   </Txt>
                   <Txt size={12} color={C.muted}>
@@ -281,7 +285,7 @@ export function ProfileScreen({
                       <Card
                         key={cred.id}
                         style={{
-                          padding: 14,
+                          padding: 12,
                           flexDirection: 'row',
                           alignItems: 'center',
                           gap: 12,
@@ -301,7 +305,7 @@ export function ProfileScreen({
                       </Card>
                     ))
                   ) : (
-                    <Card style={{ padding: 14 }}>
+                    <Card style={{ padding: 12 }}>
                       <Txt size={13} color={C.muted}>
                         Nenhuma credencial configurada neste espaço. Adiciona
                         chaves OpenAI, Anthropic ou Gemini no painel web para
@@ -313,7 +317,7 @@ export function ProfileScreen({
 
                 {/* Global Variables */}
                 <View style={{ gap: 8 }}>
-                  <Txt weight="700" size={14}>
+                  <Txt weight="600" size={14}>
                     Variáveis Globais ($vars)
                   </Txt>
                   <Txt size={12} color={C.muted}>
@@ -324,7 +328,7 @@ export function ProfileScreen({
                       <Card
                         key={v.id}
                         style={{
-                          padding: 14,
+                          padding: 12,
                           flexDirection: 'row',
                           alignItems: 'center',
                           gap: 12,
@@ -342,7 +346,7 @@ export function ProfileScreen({
                       </Card>
                     ))
                   ) : (
-                    <Card style={{ padding: 14 }}>
+                    <Card style={{ padding: 12 }}>
                       <Txt size={13} color={C.muted}>
                         Nenhuma variável global definida neste workspace.
                       </Txt>
@@ -388,7 +392,7 @@ export function ProfileScreen({
                       }}
                     >
                       <Icon name={item.icon} size={19} />
-                      <Txt size={15} weight="700">
+                      <Txt size={15} weight="600">
                         {item.title}
                       </Txt>
                     </View>
@@ -413,7 +417,7 @@ export function ProfileScreen({
                   ['Controlo de tarefas', apiBaseUrl + '/api/agents/control'],
                 ].map(([label, url]) => (
                   <Card key={label} style={{ padding: 16, gap: 8 }}>
-                    <Txt size={14} weight="700">
+                    <Txt size={14} weight="600">
                       {label}
                     </Txt>
                     <Txt size={12} color={C.muted}>
@@ -453,8 +457,8 @@ export function ProfileScreen({
           style={{
             flex: 1,
             backgroundColor: C.white,
-            padding: 24,
-            paddingTop: 40,
+            padding: 20,
+            paddingTop: 28,
           }}
         >
           <View
@@ -465,8 +469,8 @@ export function ProfileScreen({
               marginBottom: 20,
             }}
           >
-            <View>
-              <Txt size={24} weight="700">
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt size={22} weight="600">
                 Espaços de Trabalho
               </Txt>
               <Txt size={13} color={C.muted}>
@@ -503,7 +507,7 @@ export function ProfileScreen({
                   <Card
                     style={[
                       {
-                        padding: 18,
+                        padding: 12,
                         flexDirection: 'row',
                         alignItems: 'center',
                         gap: 14,
@@ -517,7 +521,7 @@ export function ProfileScreen({
                       color={isSelected ? C.ink : C.muted}
                     />
                     <View style={{ flex: 1, gap: 4 }}>
-                      <Txt weight="700" size={16}>
+                      <Txt weight="600" size={16}>
                         {ws.name}
                       </Txt>
                       <Txt size={12} color={C.muted}>
@@ -540,9 +544,9 @@ export function ProfileScreen({
 
 const styles = StyleSheet.create({
   avatarCircle: {
-    height: 56,
-    width: 56,
-    borderRadius: 28,
+    height: 44,
+    width: 44,
+    borderRadius: 22,
     backgroundColor: C.ink,
     alignItems: 'center',
     justifyContent: 'center',

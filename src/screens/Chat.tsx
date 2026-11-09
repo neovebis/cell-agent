@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,11 +15,9 @@ import {
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import * as Clipboard from 'expo-clipboard';
-import { RunCard } from '../components/RunCard';
-import { TERMINAL_STATUSES } from '../services/contracts';
+import { MessageBubble, ThinkingBubble } from '../components/ChatMessage';
+import { ChatOptions } from '../components/ChatOptions';
 import { readAttachment, guessMime } from '../services/files';
-import { AgentAvatar } from '../components/AgentAvatar';
 import { LiveMotion } from '../components/LiveMotion';
 import {
   Card,
@@ -34,7 +33,6 @@ import { C, R } from '../theme';
 import type {
   Agent,
   AgentRun,
-  RunOperation,
   AgentAvatarChoice,
   AgentMessage,
   CaptureItem,
@@ -45,7 +43,6 @@ type Props = {
   agents: Agent[];
   activeAgent: Agent | null;
   messages: AgentMessage[];
-  demo: boolean;
   busy: boolean;
   captures?: CaptureItem[];
   draft: string;
@@ -60,336 +57,18 @@ type Props = {
     avatar?: AgentAvatarChoice,
   ) => Promise<void> | void;
   onSend: (content: string, attachment?: FileAttachment) => Promise<void>;
-  onRefresh: () => void;
   onError: (message: string) => void;
   runs: AgentRun[];
   primaryId: string | null;
   canSend: boolean;
-  controlBusy: string | null;
   onSettings: () => void;
   onTools: () => void;
   onActivity: () => void;
   onPrimary: (agent: Agent) => Promise<void>;
   onRetry: (pendingId: string) => Promise<void>;
   onDiscard: (pendingId: string) => Promise<void>;
-  onControl: (run: AgentRun, operation: RunOperation) => Promise<void>;
   onFile: (runId: string, fileId: string) => Promise<void>;
 };
-
-function ThinkingBubble({
-  agentName,
-  avatar,
-}: {
-  agentName: string;
-  avatar?: AgentAvatarChoice;
-}) {
-  const dot1 = useRef(new Animated.Value(0.25)).current;
-  const dot2 = useRef(new Animated.Value(0.25)).current;
-  const dot3 = useRef(new Animated.Value(0.25)).current;
-
-  useEffect(() => {
-    const pulse = (val: Animated.Value, delay: number) => {
-      return Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.timing(val, {
-            toValue: 1,
-            duration: 350,
-            useNativeDriver: true,
-          }),
-          Animated.timing(val, {
-            toValue: 0.25,
-            duration: 350,
-            useNativeDriver: true,
-          }),
-          Animated.delay(Math.max(0, 700 - delay)),
-        ]),
-      );
-    };
-
-    const a1 = pulse(dot1, 0);
-    const a2 = pulse(dot2, 180);
-    const a3 = pulse(dot3, 360);
-
-    a1.start();
-    a2.start();
-    a3.start();
-
-    return () => {
-      a1.stop();
-      a2.stop();
-      a3.stop();
-    };
-  }, [dot1, dot2, dot3]);
-
-  return (
-    <View style={{ alignItems: 'flex-start', marginTop: 4, marginBottom: 14 }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 7,
-          marginBottom: 7,
-          paddingLeft: 4,
-        }}
-      >
-        <LiveMotion
-          size={20}
-          shape={avatar?.shape ?? 'circle'}
-          colorId={avatar?.color ?? 'black'}
-        />
-        <Txt size={12} weight="600" color={C.muted}>
-          {agentName}
-        </Txt>
-      </View>
-      <View
-        style={{
-          backgroundColor: '#F3F4F6',
-          borderRadius: 20,
-          borderBottomLeftRadius: 5,
-          paddingHorizontal: 16,
-          paddingVertical: 14,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 6,
-        }}
-      >
-        <Animated.View
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: 3.5,
-            backgroundColor: '#111827',
-            opacity: dot1,
-            transform: [
-              {
-                translateY: dot1.interpolate({
-                  inputRange: [0.25, 1],
-                  outputRange: [0, -3],
-                }),
-              },
-            ],
-          }}
-        />
-        <Animated.View
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: 3.5,
-            backgroundColor: '#111827',
-            opacity: dot2,
-            transform: [
-              {
-                translateY: dot2.interpolate({
-                  inputRange: [0.25, 1],
-                  outputRange: [0, -3],
-                }),
-              },
-            ],
-          }}
-        />
-        <Animated.View
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: 3.5,
-            backgroundColor: '#111827',
-            opacity: dot3,
-            transform: [
-              {
-                translateY: dot3.interpolate({
-                  inputRange: [0.25, 1],
-                  outputRange: [0, -3],
-                }),
-              },
-            ],
-          }}
-        />
-      </View>
-    </View>
-  );
-}
-
-function MessageBubble({
-  item,
-  agentName,
-  avatar,
-}: {
-  item: AgentMessage;
-  agentName: string;
-  avatar?: AgentAvatarChoice;
-}) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(6)).current;
-  const [showCopyOption, setShowCopyOption] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [fadeAnim, slideAnim]);
-
-  const isUser = item.role === 'user';
-
-  const formatTime = (iso?: string) => {
-    if (!iso) return '';
-    try {
-      const d = new Date(iso);
-      const hours = d.getHours().toString().padStart(2, '0');
-      const mins = d.getMinutes().toString().padStart(2, '0');
-      return `${hours}:${mins}`;
-    } catch {
-      return '';
-    }
-  };
-
-  const handleCopyMessage = async () => {
-    try {
-      await Clipboard.setStringAsync(item.content);
-      setCopied(true);
-      setTimeout(() => {
-        setCopied(false);
-        setShowCopyOption(false);
-      }, 1500);
-    } catch {
-      // ignore
-    }
-  };
-
-  return (
-    <Animated.View
-      style={{
-        alignItems: isUser ? 'flex-end' : 'flex-start',
-        marginBottom: 16,
-        opacity: fadeAnim,
-        transform: [{ translateY: slideAnim }],
-      }}
-    >
-      {!isUser && (
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 7,
-            marginBottom: 7,
-            paddingLeft: 4,
-          }}
-        >
-          <LiveMotion
-            size={20}
-            shape={avatar?.shape ?? 'circle'}
-            colorId={avatar?.color ?? 'black'}
-          />
-          <Txt size={12} weight="600" color={C.muted}>
-            {agentName}
-          </Txt>
-        </View>
-      )}
-
-      {/* Floating Copy Option Pill when user message is clicked */}
-      {isUser && showCopyOption && (
-        <View style={styles.copyPillContainer}>
-          <Pressable onPress={handleCopyMessage} style={styles.copyPill}>
-            <Icon
-              name={copied ? 'checkmark-circle' : 'copy-outline'}
-              size={14}
-              color={C.white}
-            />
-            <Txt size={12} weight="600" color={C.white}>
-              {copied ? 'Copiado!' : 'Copiar'}
-            </Txt>
-          </Pressable>
-        </View>
-      )}
-
-      <Pressable
-        onPress={() => {
-          if (isUser) {
-            setShowCopyOption((prev) => !prev);
-          }
-        }}
-        style={[
-          styles.bubble,
-          isUser ? styles.userBubble : styles.assistantBubble,
-        ]}
-      >
-        <Txt
-          size={15}
-          color={isUser ? C.white : '#111827'}
-          style={{ lineHeight: 22 }}
-        >
-          {item.content}
-        </Txt>
-
-        {item.attachments && item.attachments.length > 0 && (
-          <View style={{ marginTop: 8, gap: 4 }}>
-            {item.attachments.map((att, i) => (
-              <View
-                key={i}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 6,
-                  backgroundColor: isUser ? 'rgba(255,255,255,0.18)' : C.white,
-                  borderRadius: 12,
-                  paddingHorizontal: 9,
-                  paddingVertical: 5,
-                }}
-              >
-                <Icon
-                  name="document-attach-outline"
-                  size={14}
-                  color={isUser ? C.white : C.muted}
-                />
-                <Txt
-                  size={12}
-                  weight="600"
-                  color={isUser ? C.white : C.ink}
-                  numberOfLines={1}
-                >
-                  {att.name}
-                </Txt>
-              </View>
-            ))}
-          </View>
-        )}
-
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            gap: 4,
-            marginTop: 4,
-          }}
-        >
-          {item.status === 'failed' ? (
-            <Txt color="#EF4444" size={11} weight="600">
-              Não entregue
-            </Txt>
-          ) : (
-            <Txt
-              size={10}
-              color={isUser ? 'rgba(255,255,255,0.55)' : '#9CA3AF'}
-            >
-              {formatTime(item.createdAt)}
-            </Txt>
-          )}
-        </View>
-      </Pressable>
-    </Animated.View>
-  );
-}
 
 export function ChatScreen(props: Props) {
   const [creationOpen, setCreationOpen] = useState(false);
@@ -411,6 +90,14 @@ export function ChatScreen(props: Props) {
   const attachment = props.attachment;
   const setAttachment = props.onAttachmentChange;
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const [inputHeight, setInputHeight] = useState(40);
+  const replying =
+    props.busy ||
+    props.runs.some((run) => ['queued', 'running'].includes(run.status));
+  const attention = props.runs
+    .filter((run) => ['waiting_approval', 'paused'].includes(run.status))
+    .slice(-1)[0];
 
   // Animated rotation for '+' to 'x' button and smooth card entrance
   const rotateAnim = useRef(new Animated.Value(0)).current;
@@ -421,6 +108,8 @@ export function ChatScreen(props: Props) {
 
   useEffect(() => {
     setShowTools(false);
+    setAgentMenuOpen(false);
+    followLatest.current = true;
     rotateAnim.setValue(0);
     menuAnim.setValue(0);
   }, [props.activeAgent?.id]);
@@ -431,7 +120,10 @@ export function ChatScreen(props: Props) {
         listRef.current?.scrollToEnd({ animated: true });
     }, 60);
     return () => clearTimeout(timer);
-  }, [props.messages.length, props.busy]);
+  }, [props.messages.length, replying, attention?.id]);
+  useEffect(() => {
+    if (!draft) setInputHeight(40);
+  }, [draft]);
 
   const toggleTools = () => {
     if (showTools) {
@@ -604,9 +296,9 @@ export function ChatScreen(props: Props) {
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{
-            padding: 24,
-            paddingTop: 36,
-            paddingBottom: 126,
+            padding: 20,
+            paddingTop: 24,
+            paddingBottom: 104,
           }}
         >
           <View
@@ -621,7 +313,7 @@ export function ChatScreen(props: Props) {
               icon="add"
               label="Criar novo agente"
               onPress={() => setCreationOpen(true)}
-              size={52}
+              size={40}
             />
           </View>
 
@@ -629,55 +321,30 @@ export function ChatScreen(props: Props) {
             {props.agents.map((agent) => (
               <Pressable
                 key={agent.id}
+                accessibilityRole="button"
                 onPress={() => props.onOpen(agent)}
                 accessibilityLabel={`Abrir chat de ${agent.name}`}
               >
                 <Card style={styles.agentCard}>
                   <LiveMotion
-                    size={53}
+                    size={40}
                     shape={agent.avatar?.shape ?? 'circle'}
                     colorId={agent.avatar?.color ?? 'black'}
                   />
-                  <View style={{ flex: 1, marginLeft: 15, gap: 5 }}>
-                    <Txt weight="700" size={19}>
+                  <View style={{ flex: 1, marginLeft: 12, gap: 3 }}>
+                    <Txt weight="600" size={16}>
                       {agent.name}
                     </Txt>
                     <Txt color={C.muted} size={13} numberOfLines={1}>
                       {agent.description}
                     </Txt>
                   </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      props.primaryId === agent.id
-                        ? 'Agente principal'
-                        : 'Definir como agente principal'
-                    }
-                    onPress={(event) => {
-                      event.stopPropagation();
-                      void props.onPrimary(agent);
-                    }}
-                    style={{
-                      minWidth: 44,
-                      minHeight: 44,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Icon
-                      name={
-                        props.primaryId === agent.id ? 'star' : 'star-outline'
-                      }
-                      color={props.primaryId === agent.id ? C.ink : C.muted}
-                      size={21}
-                    />
-                  </Pressable>
                 </Card>
               </Pressable>
             ))}
 
             {props.agents.length === 0 && (
-              <Card style={{ padding: 26, gap: 8 }}>
+              <Card style={{ padding: 20, gap: 8 }}>
                 <Txt weight="700" size={17}>
                   Nenhum agente no espaço
                 </Txt>
@@ -704,8 +371,8 @@ export function ChatScreen(props: Props) {
             style={{
               flex: 1,
               backgroundColor: C.white,
-              padding: 26,
-              paddingTop: 45,
+              padding: 20,
+              paddingTop: 28,
             }}
           >
             <View
@@ -938,75 +605,73 @@ export function ChatScreen(props: Props) {
       style={{ flex: 1, backgroundColor: C.white }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Chat Header */}
-      <View style={styles.header}>
-        <RoundButton
-          icon="chevron-back"
-          label="Voltar aos agentes"
+      <View testID="chat-header" style={styles.header}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Voltar aos agentes"
           onPress={props.onBack}
+          style={styles.headerTouch}
         />
-        <LiveMotion
-          size={42}
-          shape={agent.avatar?.shape ?? 'circle'}
-          colorId={agent.avatar?.color ?? 'black'}
-        />
-        <View style={{ flex: 1 }}>
-          <Txt weight="700" size={18} numberOfLines={1}>
-            {agent.name}
-          </Txt>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 6,
-              marginTop: 1,
+        <View style={styles.headerCenter}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={'Opções de ' + agent.name}
+            accessibilityHint="Modelo, capacidades e tarefas"
+            onPress={() => {
+              Keyboard.dismiss();
+              closeTools();
+              setAgentMenuOpen(true);
             }}
+            style={({ pressed }) => [
+              styles.agentChip,
+              pressed && { backgroundColor: C.surface2 },
+            ]}
           >
-            <View
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: 3.5,
-                backgroundColor: props.busy ? '#10B981' : '#9CA3AF',
-              }}
+            <LiveMotion
+              size={22}
+              shape={agent.avatar?.shape ?? 'circle'}
+              colorId={agent.avatar?.color ?? 'black'}
             />
-            <Txt color={C.muted} size={12} numberOfLines={1}>
-              {props.busy
-                ? 'A enviar…'
-                : props.runs.some((run) => !TERMINAL_STATUSES.has(run.status))
-                  ? 'Tarefa em curso'
-                  : 'Agente central do workflow'}
+            <Txt
+              size={14}
+              weight="600"
+              numberOfLines={1}
+              style={{ flexShrink: 1 }}
+            >
+              {agent.name}
             </Txt>
-          </View>
+          </Pressable>
         </View>
-        <RoundButton
-          icon="ellipsis-horizontal"
-          label="Definições e permissões do agente"
-          onPress={props.onSettings}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Opções do agente"
+          onPress={() => {
+            Keyboard.dismiss();
+            closeTools();
+            setAgentMenuOpen(true);
+          }}
+          style={styles.headerTouch}
         />
       </View>
+      <ChatOptions
+        visible={agentMenuOpen}
+        agentName={agent.name}
+        isPrimary={props.primaryId === agent.id}
+        onClose={() => setAgentMenuOpen(false)}
+        onModel={props.onSettings}
+        onTools={props.onTools}
+        onActivity={props.onActivity}
+        onPrimary={() => void props.onPrimary(agent)}
+      />
 
-      <View
-        style={{
-          flexDirection: 'row',
-          gap: 8,
-          paddingHorizontal: 20,
-          paddingBottom: 10,
-        }}
-      >
-        <Pill onPress={props.onTools}>Capacidades</Pill>
-        <Pill onPress={props.onActivity}>Tarefas</Pill>
-        {!props.canSend && (
-          <Pill onPress={props.onSettings}>Configurar modelo</Pill>
-        )}
-      </View>
       {/* Messages List */}
       <FlatList
         ref={listRef}
         style={{ flex: 1 }}
         contentContainerStyle={{
-          paddingHorizontal: 20,
-          paddingBottom: 25,
+          paddingHorizontal: 18,
+          paddingTop: 10,
+          paddingBottom: 16,
           flexGrow: 1,
         }}
         data={props.messages}
@@ -1020,12 +685,20 @@ export function ChatScreen(props: Props) {
             160;
         }}
         scrollEventThrottle={100}
+        onContentSizeChange={() => {
+          if (followLatest.current)
+            listRef.current?.scrollToEnd({ animated: false });
+        }}
         renderItem={({ item }) => (
           <View>
             <MessageBubble
               item={item}
-              agentName={agent.name}
-              avatar={agent.avatar}
+              files={
+                props.runs.find((run) => run.id === item.runId)
+                  ?.generatedFiles || []
+              }
+              onFile={(runId, fileId) => void props.onFile(runId, fileId)}
+              onError={props.onError}
             />
             {item.pendingId && item.status === 'failed' && (
               <View style={{ alignItems: 'flex-end', paddingBottom: 6 }}>
@@ -1075,67 +748,90 @@ export function ChatScreen(props: Props) {
           </View>
         )}
         ListFooterComponent={
-          <View style={{ gap: 12, paddingTop: 12 }}>
-            {props.busy && (
-              <ThinkingBubble agentName={agent.name} avatar={agent.avatar} />
+          <View style={{ gap: 8, paddingTop: 2 }}>
+            {replying && <ThinkingBubble agentName={agent.name} />}
+            {!!attention && (
+              <View style={styles.attention}>
+                <Txt size={13} color={C.muted}>
+                  {attention.status === 'paused'
+                    ? 'Este pedido está em pausa.'
+                    : attention.approval?.reason ||
+                      'Preciso da tua autorização para continuar.'}
+                </Txt>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    attention.status === 'paused'
+                      ? 'Rever pedido em pausa'
+                      : 'Rever autorização'
+                  }
+                  onPress={props.onActivity}
+                  style={{
+                    alignSelf: 'flex-start',
+                    justifyContent: 'center',
+                    minHeight: 44,
+                  }}
+                >
+                  <Txt size={13} weight="500">
+                    {attention.status === 'paused'
+                      ? 'Rever pedido'
+                      : 'Rever autorização'}{' '}
+                    ↗
+                  </Txt>
+                </Pressable>
+              </View>
             )}
-            {props.runs
-              .filter(
-                (run) =>
-                  !TERMINAL_STATUSES.has(run.status) ||
-                  (run.generatedFiles || []).length > 0,
-              )
-              .slice(-8)
-              .map((run) => (
-                <RunCard
-                  key={run.id}
-                  run={run}
-                  busy={props.controlBusy === run.id}
-                  onControl={props.onControl}
-                  onFile={props.onFile}
-                />
-              ))}
           </View>
         }
         ListEmptyComponent={
-          <View
-            style={{
-              flex: 1,
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 10,
-              marginBottom: 70,
-            }}
-          >
-            <LiveMotion
-              size={74}
-              shape={agent.avatar?.shape ?? 'circle'}
-              colorId={agent.avatar?.color ?? 'black'}
-            />
-            <Txt
-              size={26}
-              weight="600"
-              style={{ marginTop: 10, letterSpacing: -0.5 }}
-            >
-              Como posso ajudar?
-            </Txt>
-            <Txt
-              size={14}
-              color={C.muted}
+          !replying && !attention ? (
+            <View
               style={{
-                textAlign: 'center',
-                paddingHorizontal: 30,
-                lineHeight: 21,
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                marginBottom: 40,
               }}
             >
-              Conversa com {agent.name}. Podes colocar qualquer questão ou
-              partilhar ficheiros para análise.
-            </Txt>
-          </View>
+              <LiveMotion
+                size={52}
+                shape={agent.avatar?.shape ?? 'circle'}
+                colorId={agent.avatar?.color ?? 'black'}
+              />
+              <Txt size={22} weight="500" style={{ marginTop: 8 }}>
+                Como posso ajudar?
+              </Txt>
+              <Txt
+                size={13}
+                color={C.muted}
+                style={{
+                  textAlign: 'center',
+                  paddingHorizontal: 20,
+                  lineHeight: 20,
+                }}
+              >
+                {props.canSend
+                  ? 'Escreve uma mensagem ou partilha um ficheiro.'
+                  : 'Escolhe o modelo nas opções para começar.'}
+              </Txt>
+              {!props.canSend && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={props.onSettings}
+                  style={{ minHeight: 44, justifyContent: 'center' }}
+                >
+                  <Txt size={13} weight="600">
+                    Escolher modelo
+                  </Txt>
+                </Pressable>
+              )}
+            </View>
+          ) : null
         }
       />
 
-      {/* Floating Action Menu Card matching design (Criar missão, Câmara, Imagem ou vídeo, Ficheiros, Capture, Plugins) */}
+      {/* Anexos e biblioteca */}
       {showTools && (
         <Animated.View
           style={[
@@ -1159,37 +855,13 @@ export function ChatScreen(props: Props) {
             },
           ]}
         >
-          {/* 1. Criar missão */}
-          <Pressable
-            style={styles.menuItem}
-            onPress={() => {
-              closeTools();
-              props.onActivity();
-            }}
-          >
-            <View style={styles.menuIconCircle}>
-              <Icon name="sparkles-outline" size={20} color={C.ink} />
-            </View>
-            <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
-                Criar missão
-              </Txt>
-              <Txt size={12} color={C.muted}>
-                Acompanhar o trabalho do agente
-              </Txt>
-            </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
-          </Pressable>
-
-          <View style={styles.menuDivider} />
-
           {/* 2. Câmara */}
           <Pressable style={styles.menuItem} onPress={handleLaunchCamera}>
             <View style={styles.menuIconCircle}>
-              <Icon name="camera-outline" size={20} color={C.ink} />
+              <Icon name="camera-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={14} weight="500">
                 Câmara
               </Txt>
               <Txt size={12} color={C.muted}>
@@ -1204,10 +876,10 @@ export function ChatScreen(props: Props) {
           {/* 3. Imagem ou vídeo */}
           <Pressable style={styles.menuItem} onPress={handleLaunchGallery}>
             <View style={styles.menuIconCircle}>
-              <Icon name="image-outline" size={20} color={C.ink} />
+              <Icon name="image-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={14} weight="500">
                 Imagem
               </Txt>
               <Txt size={12} color={C.muted}>
@@ -1222,10 +894,10 @@ export function ChatScreen(props: Props) {
           {/* 4. Ficheiros */}
           <Pressable style={styles.menuItem} onPress={handlePickDocument}>
             <View style={styles.menuIconCircle}>
-              <Icon name="attach-outline" size={20} color={C.ink} />
+              <Icon name="attach-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={14} weight="500">
                 Ficheiros
               </Txt>
               <Txt size={12} color={C.muted}>
@@ -1246,38 +918,14 @@ export function ChatScreen(props: Props) {
             }}
           >
             <View style={styles.menuIconCircle}>
-              <Icon name="aperture-outline" size={20} color={C.ink} />
+              <Icon name="aperture-outline" size={18} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
+              <Txt size={14} weight="500">
                 Capture
               </Txt>
               <Txt size={12} color={C.muted}>
                 Enviar conteúdo capturado
-              </Txt>
-            </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
-          </Pressable>
-
-          <View style={styles.menuDivider} />
-
-          {/* 6. Plugins */}
-          <Pressable
-            style={styles.menuItem}
-            onPress={() => {
-              closeTools();
-              props.onTools();
-            }}
-          >
-            <View style={styles.menuIconCircle}>
-              <Icon name="extension-puzzle-outline" size={20} color={C.ink} />
-            </View>
-            <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={15} weight="700">
-                Plugins
-              </Txt>
-              <Txt size={12} color={C.muted}>
-                Agentes e integrações
               </Txt>
             </View>
             <Icon name="chevron-forward" size={16} color={C.muted} />
@@ -1298,76 +946,63 @@ export function ChatScreen(props: Props) {
         </View>
       )}
 
-      {/* Composer */}
-      <View style={styles.composer}>
+      <View testID="chat-composer" style={styles.composer}>
+        <Animated.View style={{ transform: [{ rotate: spin }] }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Ferramentas e anexos"
+            hitSlop={2}
+            onPress={toggleTools}
+            style={[
+              styles.plusButton,
+              showTools && { backgroundColor: C.surface2 },
+            ]}
+          >
+            <Icon name="add" size={21} />
+          </Pressable>
+        </Animated.View>
         <TextInput
           value={draft}
           onChangeText={setDraft}
           multiline
-          placeholder={`Conversar com ${agent.name}...`}
+          placeholder="Mensagem…"
           placeholderTextColor={C.muted}
-          style={styles.composeInput}
+          style={[styles.composeInput, { height: inputHeight }]}
           accessibilityLabel="Mensagem ao agente"
+          onContentSizeChange={(event) =>
+            setInputHeight(
+              Math.max(
+                40,
+                Math.min(116, Math.ceil(event.nativeEvent.contentSize.height)),
+              ),
+            )
+          }
         />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-          {/* Animated Rotate Button: '+' spins 45deg to 'x' */}
-          <Animated.View style={{ transform: [{ rotate: spin }] }}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Ferramentas e anexos"
-              onPress={toggleTools}
-              style={[
-                styles.plusButton,
-                showTools && { backgroundColor: C.ink, borderColor: C.ink },
-              ]}
-            >
-              <Icon name="add" size={23} color={showTools ? C.white : C.ink} />
-            </Pressable>
-          </Animated.View>
-
-          <View style={styles.agentChip}>
-            <LiveMotion
-              size={22}
-              shape={agent.avatar?.shape ?? 'circle'}
-              colorId={agent.avatar?.color ?? 'black'}
-            />
-            <Txt
-              size={14}
-              weight="600"
-              numberOfLines={1}
-              style={{ flexShrink: 1 }}
-            >
-              {agent.name}
-            </Txt>
-            <Icon name="chevron-down" size={17} color={C.muted} />
-          </View>
-          <View style={{ flex: 1 }} />
-          <RoundButton
-            icon="arrow-up"
-            label="Enviar mensagem"
-            primary={Boolean(draft.trim() || attachment) && !props.busy}
-            size={48}
-            disabled={
-              props.busy || !props.canSend || (!draft.trim() && !attachment)
-            }
-            onPress={async () => {
-              if ((!draft.trim() && !attachment) || props.busy) return;
-              const text = draft.trim();
-              const curAtt = attachment;
-              setDraft('');
-              setAttachment(null);
-              closeTools();
-              try {
-                await props.onSend(text, curAtt || undefined);
-              } catch (error) {
-                if (!(error as { pendingId?: string })?.pendingId) {
-                  setDraft(text);
-                  setAttachment(curAtt);
-                }
+        <RoundButton
+          icon="arrow-up"
+          label="Enviar mensagem"
+          primary={Boolean(draft.trim() || attachment) && !props.busy}
+          size={38}
+          disabled={
+            props.busy || !props.canSend || (!draft.trim() && !attachment)
+          }
+          onPress={async () => {
+            if ((!draft.trim() && !attachment) || props.busy) return;
+            const text = draft.trim();
+            const curAtt = attachment;
+            setDraft('');
+            setAttachment(null);
+            closeTools();
+            try {
+              await props.onSend(text, curAtt || undefined);
+            } catch (error) {
+              if (!(error as { pendingId?: string })?.pendingId) {
+                setDraft(text);
+                setAttachment(curAtt);
               }
-            }}
-          />
-        </View>
+            }
+          }}
+        />
       </View>
 
       {/* Library Picker Modal */}
@@ -1381,8 +1016,8 @@ export function ChatScreen(props: Props) {
           style={{
             flex: 1,
             backgroundColor: C.white,
-            padding: 24,
-            paddingTop: 40,
+            padding: 20,
+            paddingTop: 28,
           }}
         >
           <View
@@ -1454,8 +1089,8 @@ export function ChatScreen(props: Props) {
 
 const styles = StyleSheet.create({
   agentCard: {
-    padding: 17,
-    minHeight: 91,
+    padding: 14,
+    minHeight: 74,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -1463,15 +1098,15 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface,
     borderWidth: 1,
     borderColor: C.border,
-    borderRadius: 20,
-    padding: 16,
-    fontSize: 15,
+    borderRadius: 15,
+    padding: 12,
+    fontSize: 14,
     color: C.ink,
   },
   blackButton: {
     backgroundColor: C.ink,
     borderRadius: R.pill,
-    height: 54,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1492,113 +1127,88 @@ const styles = StyleSheet.create({
     backgroundColor: C.white,
   },
   header: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    minHeight: 54,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    borderBottomWidth: 1,
-    borderColor: '#F1F1F1',
+    gap: 2,
   },
-  bubble: {
-    maxWidth: '85%',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20,
-  },
-  userBubble: {
-    backgroundColor: '#111111',
-    borderBottomRightRadius: 4,
-  },
-  assistantBubble: {
-    backgroundColor: '#F3F4F6',
-    borderBottomLeftRadius: 4,
-  },
-  copyPillContainer: {
-    marginBottom: 6,
-    alignSelf: 'flex-end',
-  },
-  copyPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: C.ink,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-  },
+  headerTouch: { width: 44, height: 44 },
+  headerCenter: { flex: 1, alignItems: 'center', minWidth: 0 },
+  attention: { gap: 1, paddingVertical: 4, marginBottom: 6 },
   composer: {
-    marginHorizontal: 17,
-    marginBottom: 12,
+    marginHorizontal: 12,
+    marginBottom: 8,
     borderRadius: R.composer,
     borderWidth: 1,
     borderColor: C.border,
     backgroundColor: C.surface,
-    paddingHorizontal: 12,
-    paddingTop: 16,
-    paddingBottom: 11,
+    padding: 5,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 3,
   },
   composeInput: {
-    minHeight: 43,
-    maxHeight: 150,
-    fontSize: 17,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 40,
+    maxHeight: 116,
+    fontSize: 15,
+    lineHeight: 21,
     color: C.ink,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 9,
     textAlignVertical: 'top',
+    includeFontPadding: false,
   },
   plusButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: C.surface2,
-    borderWidth: 1,
-    borderColor: C.border,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   agentChip: {
-    height: 44,
-    borderRadius: 30,
+    minHeight: 38,
+    maxWidth: '100%',
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: C.border,
+    backgroundColor: C.surface,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    maxWidth: 168,
+    gap: 7,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
   },
   floatingMenuCard: {
     backgroundColor: C.white,
-    borderRadius: 24,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#EFEFEF',
-    marginHorizontal: 17,
+    marginHorizontal: 12,
     marginBottom: 10,
     paddingVertical: 6,
     paddingHorizontal: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.1,
-    shadowRadius: 14,
+    shadowRadius: 10,
     elevation: 8,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
+    gap: 10,
+    paddingVertical: 7,
     paddingHorizontal: 10,
     borderRadius: 16,
   },
   menuIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1616,15 +1226,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: C.border,
-    marginHorizontal: 17,
+    marginHorizontal: 12,
     marginBottom: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
-  },
-  grantRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
   },
 });

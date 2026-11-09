@@ -203,12 +203,15 @@ export function conversationMessages(
         role: 'assistant',
         content:
           run.answer ||
-          run.summary ||
           (run.status === 'success'
-            ? 'Tarefa concluída.'
+            ? run.generatedFiles?.length
+              ? 'O ficheiro está pronto.'
+              : 'O pedido foi concluído.'
             : run.status === 'cancelled'
-              ? 'Tarefa cancelada.'
-              : 'A execução terminou sem resposta.'),
+              ? 'Este pedido foi cancelado.'
+              : run.status === 'expired'
+                ? 'Este pedido demorou demasiado. Tenta novamente.'
+                : 'Não foi possível concluir este pedido. Tenta novamente ou consulta os detalhes em Tarefas.'),
         createdAt: run.updatedAt || run.createdAt,
         status: run.status === 'failed' ? 'failed' : 'sent',
       });

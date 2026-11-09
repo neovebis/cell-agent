@@ -118,7 +118,7 @@ export function AgentSettings({
     <Card
       key={key}
       style={{
-        padding: 15,
+        padding: 12,
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
@@ -149,10 +149,10 @@ export function AgentSettings({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View style={{ flex: 1, backgroundColor: C.white, paddingTop: 35 }}>
+      <View style={{ flex: 1, backgroundColor: C.white, paddingTop: 28 }}>
         <View
           style={{
-            paddingHorizontal: 24,
+            paddingHorizontal: 20,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 12,
@@ -160,7 +160,7 @@ export function AgentSettings({
           }}
         >
           <View style={{ flex: 1 }}>
-            <Txt size={25} weight="700">
+            <Txt size={22} weight="600">
               Configurar agente
             </Txt>
             <Txt size={12} color={C.muted}>
@@ -177,7 +177,7 @@ export function AgentSettings({
           style={{
             flexDirection: 'row',
             gap: 8,
-            paddingHorizontal: 24,
+            paddingHorizontal: 20,
             marginBottom: 18,
           }}
         >
@@ -199,14 +199,14 @@ export function AgentSettings({
         <ScrollView
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{
-            paddingHorizontal: 24,
+            paddingHorizontal: 20,
             paddingBottom: 45,
             gap: 16,
           }}
         >
           {tab === 'model' ? (
             <>
-              <Txt weight="700" size={14}>
+              <Txt weight="600" size={14}>
                 Credencial do modelo
               </Txt>
               {credentials
@@ -390,7 +390,7 @@ export function AgentSettings({
                 'Exigir verificações antes da conclusão.',
                 'verificationRequired',
               )}
-              <Txt size={15} weight="700">
+              <Txt size={15} weight="600">
                 Cells e ferramentas
               </Txt>
               {!(agent.nodes || []).length && (
@@ -403,7 +403,7 @@ export function AgentSettings({
                 <Card
                   key={cell.id}
                   style={{
-                    padding: 15,
+                    padding: 12,
                     flexDirection: 'row',
                     gap: 10,
                     alignItems: 'center',
@@ -435,14 +435,14 @@ export function AgentSettings({
                   />
                 </Card>
               ))}
-              <Txt size={15} weight="700">
+              <Txt size={15} weight="600">
                 Credenciais autorizadas
               </Txt>
               {credentials.map((credential) => (
                 <Card
                   key={credential.id}
                   style={{
-                    padding: 15,
+                    padding: 12,
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 8,
@@ -471,7 +471,7 @@ export function AgentSettings({
                 </Card>
               ))}
               {!!variables.length && (
-                <Txt size={15} weight="700">
+                <Txt size={15} weight="600">
                   Variáveis autorizadas
                 </Txt>
               )}
@@ -529,7 +529,7 @@ export function AgentSettings({
               }
             }}
             style={{
-              minHeight: 52,
+              minHeight: 46,
               backgroundColor: C.ink,
               borderRadius: 28,
               alignItems: 'center',
@@ -558,7 +558,7 @@ const field = {
   borderColor: C.border,
   backgroundColor: C.surface,
   borderRadius: 18,
-  padding: 15,
+  padding: 12,
   color: C.ink,
-  fontSize: 15,
+  fontSize: 14,
 } as const;

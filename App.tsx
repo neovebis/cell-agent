@@ -194,7 +194,6 @@ function Root() {
               agents={app.agents}
               activeAgent={app.showAgents ? null : app.activeAgent}
               messages={app.messages}
-              demo={false}
               busy={app.sending}
               captures={app.captures}
               draft={app.draft}
@@ -203,7 +202,6 @@ function Root() {
               onAttachmentChange={app.changeAttachment}
               runs={app.runs}
               primaryId={app.primaryId}
-              controlBusy={app.controlBusy}
               canSend={app.profileKnown && Boolean(app.profile)}
               onOpen={app.openAgent}
               onBack={() => {
@@ -221,7 +219,6 @@ function Root() {
                 }
                 await app.send(content, attachment);
               }}
-              onRefresh={app.refresh}
               onError={app.setNotice}
               onSettings={() => settings()}
               onTools={() => {
@@ -231,7 +228,6 @@ function Root() {
               onPrimary={app.makePrimary}
               onRetry={app.retry}
               onDiscard={app.discardPending}
-              onControl={app.control}
               onFile={app.openFile}
             />
           )}

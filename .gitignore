@@ -11,3 +11,5 @@ ios/
 *.keystore
 .DS_Store
 Thumbs.db
+
+.codex-attachments/

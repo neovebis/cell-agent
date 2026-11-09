@@ -8,13 +8,13 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { C, R } from '../theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 export const Txt = ({
   children,
-  size = 16,
+  size = 14,
   weight = '400',
   color = C.ink,
   style,
@@ -30,7 +30,7 @@ export const Txt = ({
   <Text
     numberOfLines={numberOfLines}
     style={[
-      { fontSize: size, color, fontWeight: weight, letterSpacing: -0.4 },
+      { fontSize: size, color, fontWeight: weight, letterSpacing: -0.2 },
       style,
     ]}
   >
@@ -39,7 +39,7 @@ export const Txt = ({
 );
 export function Icon({
   name,
-  size = 23,
+  size = 21,
   color = C.ink,
 }: {
   name: IconName;
@@ -52,7 +52,7 @@ export function RoundButton({
   icon,
   onPress,
   primary,
-  size = 48,
+  size = 42,
   label,
   disabled,
 }: {
@@ -68,6 +68,7 @@ export function RoundButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       disabled={disabled}
+      hitSlop={Math.max(0, (44 - size) / 2)}
       onPress={onPress}
       style={[
         styles.round,
@@ -80,7 +81,11 @@ export function RoundButton({
         },
       ]}
     >
-      <Icon name={icon} color={primary ? C.white : C.ink} />
+      <Icon
+        name={icon}
+        size={size < 42 ? 19 : 21}
+        color={primary ? C.white : C.ink}
+      />
     </Pressable>
   );
 }
@@ -97,11 +102,19 @@ export function Pill({
 }) {
   return (
     <Pressable
+      accessibilityRole={onPress ? 'button' : undefined}
       onPress={onPress}
+      hitSlop={{ top: 4, bottom: 4, left: 0, right: 0 }}
       disabled={!onPress}
       style={[styles.pill, selected && { backgroundColor: C.ink }, style]}
     >
-      <Txt weight="600" size={15} color={selected ? C.white : C.ink}>
+      <Txt
+        weight="500"
+        size={13}
+        numberOfLines={1}
+        color={selected ? C.white : C.ink}
+        style={{ maxWidth: '100%', flexShrink: 1, textAlign: 'center' }}
+      >
         {children}
       </Txt>
     </Pressable>
@@ -124,13 +137,13 @@ export function PageTitle({
   title: string;
 }) {
   return (
-    <View style={{ marginBottom: 30 }}>
+    <View style={{ marginBottom: 20 }}>
       {!!kicker && (
-        <Txt size={14} color={C.muted} weight="500" style={{ marginBottom: 4 }}>
+        <Txt size={12} color={C.muted} weight="400" style={{ marginBottom: 4 }}>
           {kicker}
         </Txt>
       )}
-      <Txt size={36} weight="700" style={{ letterSpacing: -1.25 }}>
+      <Txt size={28} weight="600" style={{ letterSpacing: -0.75 }}>
         {title}
       </Txt>
     </View>
@@ -149,15 +162,15 @@ export const styles = StyleSheet.create({
     borderColor: C.border,
     borderWidth: 1,
     borderRadius: R.card,
-    padding: 22,
+    padding: 16,
   },
   pill: {
     backgroundColor: C.surface2,
     borderWidth: 1,
     borderColor: C.border,
     borderRadius: R.pill,
-    minHeight: 46,
-    paddingHorizontal: 18,
+    minHeight: 36,
+    paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -164,9 +164,9 @@ export function CaptureScreen({
     <View style={{ flex: 1, backgroundColor: C.white }}>
       <ScrollView
         contentContainerStyle={{
-          padding: 24,
-          paddingTop: 36,
-          paddingBottom: 135,
+          padding: 20,
+          paddingTop: 24,
+          paddingBottom: 104,
         }}
       >
         <PageTitle kicker="O mundo físico entra aqui" title="Capture" />
@@ -180,7 +180,7 @@ export function CaptureScreen({
           <View style={styles.cameraCircle}>
             <Icon name="camera-outline" size={40} color={C.white} />
           </View>
-          <Txt weight="700" size={29} style={{ marginTop: 28 }}>
+          <Txt weight="600" size={29} style={{ marginTop: 28 }}>
             Capturar
           </Txt>
           <Txt color={C.muted} size={16} style={{ marginTop: 8 }}>
@@ -189,7 +189,7 @@ export function CaptureScreen({
         </Pressable>
 
         <Txt
-          weight="700"
+          weight="600"
           color={C.muted}
           size={13}
           style={{ marginTop: 29, marginBottom: 19, letterSpacing: 0.5 }}
@@ -270,7 +270,7 @@ export function CaptureScreen({
           />
           <View style={styles.sheet}>
             <View style={styles.sheetGrab} />
-            <Txt size={18} weight="700">
+            <Txt size={18} weight="600">
               Nova Captura
             </Txt>
             <TextInput
@@ -327,7 +327,7 @@ export function CaptureScreen({
               alignItems: 'center',
             }}
           >
-            <Txt weight="700" size={27}>
+            <Txt weight="600" size={27}>
               Capturar texto
             </Txt>
             <RoundButton
@@ -370,7 +370,7 @@ export function CaptureScreen({
             {saving ? (
               <ActivityIndicator color={C.white} />
             ) : (
-              <Txt color={C.white} weight="700">
+              <Txt color={C.white} weight="600">
                 Guardar na biblioteca
               </Txt>
             )}
@@ -396,7 +396,7 @@ export function CaptureScreen({
                 marginBottom: 12,
               }}
             >
-              <Txt size={20} weight="700" numberOfLines={1} style={{ flex: 1 }}>
+              <Txt size={20} weight="600" numberOfLines={1} style={{ flex: 1 }}>
                 {selected?.title}
               </Txt>
               <RoundButton
@@ -439,7 +439,7 @@ export function CaptureScreen({
               style={styles.sendAgentButton}
             >
               <Icon name="paper-plane-outline" color={C.white} size={20} />
-              <Txt color={C.white} weight="700" size={16}>
+              <Txt color={C.white} weight="600" size={16}>
                 Enviar para o Agente
               </Txt>
             </Pressable>
@@ -458,8 +458,8 @@ export function CaptureScreen({
           style={{
             flex: 1,
             backgroundColor: C.white,
-            padding: 24,
-            paddingTop: 40,
+            padding: 20,
+            paddingTop: 28,
           }}
         >
           <View
@@ -471,7 +471,7 @@ export function CaptureScreen({
             }}
           >
             <View>
-              <Txt size={24} weight="700">
+              <Txt size={24} weight="600">
                 Escolher Agente
               </Txt>
               <Txt size={13} color={C.muted}>
@@ -508,7 +508,7 @@ export function CaptureScreen({
                 >
                   <AgentAvatar size={44} />
                   <View style={{ flex: 1, gap: 4 }}>
-                    <Txt weight="700" size={17}>
+                    <Txt weight="600" size={17}>
                       {ag.name}
                     </Txt>
                     <Txt color={C.muted} size={12} numberOfLines={1}>
