@@ -97,6 +97,14 @@ try {
     let releaseOldModels;
     let oldModelsRequested = false;
     let releaseTick;
+    let releasePost;
+    let confirmationPending = false;
+    let confirmationReads = 0;
+    let tickRequested = false;
+    const postGate = new Promise((resolve) => {
+      releasePost = resolve;
+      pendingFixtureReleases.add(resolve);
+    });
     const tickGate = new Promise((resolve) => {
       releaseTick = resolve;
       pendingFixtureReleases.add(resolve);
@@ -240,18 +248,26 @@ try {
             files: [],
           };
           runs.push(run);
+          if (run.message === 'Revê o meu PDF.') {
+            confirmationPending = true;
+            await postGate;
+            confirmationPending = false;
+            pendingFixtureReleases.delete(releasePost);
+          }
           return reply({ run }, 202);
         }
         if (url.searchParams.has('id'))
           return reply({
             run: runs.find((run) => run.id === url.searchParams.get('id')),
           });
+        if (confirmationPending) confirmationReads++;
         return reply({ runs });
       }
       if (url.pathname === '/api/agents/tick') {
         const run = runs.find((run) => run.id === body.runId);
         if (run?.status === 'queued') {
           if (run.message === 'Revê o meu PDF.') {
+            tickRequested = true;
             await tickGate;
             pendingFixtureReleases.delete(releaseTick);
             Object.assign(run, {
@@ -442,6 +458,22 @@ try {
     await composer.fill('');
     await page.waitForTimeout(100);
     assert.ok((await composeBar.boundingBox()).height <= 64);
+    await page.evaluate(() => {
+      window.__maxCopies = 0;
+      const observe = () => {
+        const count = [
+          ...document.querySelectorAll('[data-testid="user-message"]'),
+        ].filter((node) => node.textContent.includes('Revê o meu PDF.')).length;
+        window.__maxCopies = Math.max(window.__maxCopies, count);
+      };
+      window.__messageObserver = new MutationObserver(observe);
+      window.__messageObserver.observe(document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      });
+      observe();
+    });
     await composer.fill('Revê o meu PDF.');
     await page
       .getByRole('button', { name: 'Enviar mensagem', exact: true })
@@ -462,6 +494,34 @@ try {
       await page.getByText('Documento preparado.', { exact: true }).count(),
       0,
     );
+    const optimisticId = await page
+      .getByTestId('user-message')
+      .getAttribute('id');
+    for (let attempt = 0; attempt < 140 && confirmationReads < 2; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.ok(
+      confirmationReads >= 2,
+      'The server history must be read while POST confirmation is delayed',
+    );
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-confirming.png'),
+    });
+    assert.equal(await page.getByTestId('user-message').count(), 1);
+    assert.equal(
+      tickRequested,
+      false,
+      'Unconfirmed local sends should not start another UI execution',
+    );
+    releasePost();
+    for (let attempt = 0; attempt < 100 && !tickRequested; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.ok(tickRequested);
+    assert.equal(
+      await page.getByTestId('user-message').getAttribute('id'),
+      optimisticId,
+    );
+    assert.equal(await page.evaluate(() => window.__maxCopies), 1);
+    await page.evaluate(() => window.__messageObserver.disconnect());
     await waitForPainted(page.getByText('Revê o meu PDF.', { exact: true }));
     await page.screenshot({
       path: join(evidence, viewport.name + '-working.png'),
@@ -654,6 +714,7 @@ try {
       draftPreserved: true,
       modelCatalogRace: true,
       configuredEndpoints: true,
+      delayedConfirmationStable: true,
       compactChat: true,
       hiddenHeaderActions: true,
       noOperationalCardsInChat: true,

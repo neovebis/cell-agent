@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { CellApi, SessionExpiredError } from '../src/services/api.ts';
 import { CellClient } from '../src/services/client.ts';
 import {
+  acknowledgePending,
+  recoverUnconfirmedPending,
   conversationMessages,
   scopeKey,
   trustedDownload,
@@ -553,4 +555,82 @@ test('a conversa aguarda a resposta real sem transformar métricas numa mensagem
     [],
   ).find((message) => message.role === 'assistant');
   assert.equal(file.content, 'O ficheiro está pronto.');
+});
+
+test('a confirmação conserva a identidade da mensagem sem apagar pedidos iguais', () => {
+  const first = {
+    id: 'local-one',
+    workflowId: 'workflow-one',
+    content: 'Olá',
+    createdAt: '2026-11-09T10:00:00Z',
+    files: [{ name: 'a.txt', mimeType: 'text/plain', data: 'YQ==' }],
+    status: 'sending',
+  };
+  const second = { ...first, id: 'local-two', files: [] };
+  const confirmedRun = run({ id: 'confirmed', message: 'Olá' });
+  const pending = acknowledgePending([first, second], first.id, confirmedRun);
+  const history = conversationMessages('workflow-one', [confirmedRun], pending);
+  assert.equal(history.filter((message) => message.role === 'user').length, 2);
+  assert.equal(
+    history.find((message) => message.runId === 'confirmed').id,
+    first.id,
+  );
+  assert.equal(pending[0].status, 'sent');
+  assert.deepEqual(pending[0].files, []);
+  assert.equal(first.status, 'sending');
+  assert.equal(second.status, 'sending');
+});
+test('envios interrompidos voltam com confirmação explícita e a mesma chave', () => {
+  const original = {
+    id: 'stable-key',
+    workflowId: 'workflow-one',
+    content: 'Olá',
+    createdAt: '2026-11-09T10:00:00Z',
+    files: [],
+    status: 'sending',
+  };
+  const recovered = recoverUnconfirmedPending([original]);
+  assert.equal(recovered[0].status, 'failed');
+  assert.equal(recovered[0].id, original.id);
+  assert.match(recovered[0].error, /sem confirmação/);
+  assert.equal(original.status, 'sending');
+});
+test('remover um envio sem confirmação limpa a caixa local e conserva mensagens confirmadas', async () => {
+  const store = memoryStore(),
+    auth = session();
+  const key = scopeKey(auth) + 'pending:workflow-one';
+  const interrupted = {
+    id: 'interrupted',
+    workflowId: 'workflow-one',
+    content: 'Olá',
+    createdAt: '2026-11-09T10:00:00Z',
+    files: [],
+    status: 'sending',
+  };
+  const sent = {
+    ...interrupted,
+    id: 'confirmed',
+    runId: 'run-one',
+    status: 'sent',
+  };
+  await store.set(key, [interrupted, sent]);
+  const client = new CellClient(
+    new CellApi(config, async () => {
+      assert.fail('Discarding a local pending message must not send a request');
+    }),
+    store,
+  );
+  await client.discardPending('workflow-one', interrupted.id, auth);
+  await client.discardPending('workflow-one', sent.id, auth);
+  assert.deepEqual(await client.getPending('workflow-one', auth), [sent]);
+});
+test('a conversa não mostra mensagens de outro workflow durante a mudança de agente', () => {
+  assert.deepEqual(
+    conversationMessages(
+      'other-workflow',
+      [run({ answer: 'Resposta de outro agente' })],
+      [],
+    ),
+    [],
+  );
 });

@@ -303,7 +303,7 @@ export class CellClient {
       await this.store.set(
         key,
         current.filter(
-          (item) => item.id !== pendingId || item.status !== 'failed',
+          (item) => item.id !== pendingId || item.status === 'sent',
         ),
       );
     });

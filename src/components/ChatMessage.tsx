@@ -133,6 +133,7 @@ export function MessageBubble({
   };
   return (
     <Animated.View
+      nativeID={item.id}
       testID={isUser ? 'user-message' : 'agent-message'}
       style={[
         styles.message,
@@ -200,7 +201,7 @@ export function MessageBubble({
             color={item.status === 'failed' ? '#FFB4B4' : '#B9B9B9'}
             style={{ alignSelf: 'flex-end', marginTop: 3 }}
           >
-            {item.status === 'failed' ? 'Não enviado' : time}
+            {item.status === 'failed' ? 'Por confirmar' : time}
           </Txt>
         )}
       </Pressable>

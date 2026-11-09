@@ -8,7 +8,11 @@ import {
 import { AppState, Linking } from 'react-native';
 import { gateway } from '../services/gateway';
 import { SessionExpiredError } from '../services/api';
-import { conversationMessages } from '../services/contracts';
+import {
+  acknowledgePending,
+  conversationMessages,
+  recoverUnconfirmedPending,
+} from '../services/contracts';
 import {
   clearCaptureFiles,
   guessMime,
@@ -60,8 +64,12 @@ export function useAgentApp() {
     [showAgents, setShowAgents] = useState(false);
   const [profile, setProfile] = useState<AgentProfile | null>(null),
     [profileKnown, setProfileKnown] = useState(false);
-  const [runs, setRuns] = useState<AgentRun[]>([]),
-    [pending, setPending] = useState<PendingMessage[]>([]);
+  const [{ runs, pending }, setTranscript] = useState<{
+    runs: AgentRun[];
+    pending: PendingMessage[];
+  }>({ runs: [], pending: [] });
+  const transmissions = useRef(new Set<{ agentId: string; context: number }>());
+  const transcriptRevision = useRef(0);
   const [drafts, setDrafts] = useState<Record<string, AgentDraft>>({});
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
@@ -80,13 +88,25 @@ export function useAgentApp() {
   const scope = session ? `${session.userId}:${session.workspaceId}` : '';
   const activeAgent = agents.find((agent) => agent.id === agentId) || null;
 
+  const isTransmitting = (id: string, context: number) =>
+    [...transmissions.current].some(
+      (item) => item.agentId === id && item.context === context,
+    );
+  const beginTransmission = (id: string, context: number) => {
+    const token = { agentId: id, context };
+    transmissions.current.add(token);
+    transcriptRevision.current++;
+    return () => {
+      transmissions.current.delete(token);
+      transcriptRevision.current++;
+    };
+  };
   const reset = () => {
     setAgents([]);
     setAgentId(null);
     setProfile(null);
     setProfileKnown(false);
-    setRuns([]);
-    setPending([]);
+    setTranscript({ runs: [], pending: [] });
     setDrafts({});
     setCredentials([]);
     setVariables([]);
@@ -220,11 +240,11 @@ export function useAgentApp() {
     const auth = sessionRef.current;
     setProfile(null);
     setProfileKnown(false);
-    setRuns([]);
-    setPending([]);
+    setTranscript({ runs: [], pending: [] });
     if (!auth || !agentId) return;
     let cancelled = false;
     const context = epoch.current;
+    const observedRevision = transcriptRevision.current;
     Promise.all([
       gateway.getCachedRuns(agentId, auth),
       gateway.getPending(agentId, auth),
@@ -233,10 +253,23 @@ export function useAgentApp() {
         if (
           !cancelled &&
           context === epoch.current &&
-          agentId === agentIdRef.current
+          agentId === agentIdRef.current &&
+          observedRevision === transcriptRevision.current
         ) {
-          setRuns((value) => mergeRuns(value, cached));
-          setPending(outbox);
+          const transmitting = isTransmitting(agentId, context);
+          setTranscript((value) => ({
+            runs: transmitting ? value.runs : mergeRuns(value.runs, cached),
+            pending: transmitting
+              ? [
+                  ...new Map(
+                    [...outbox, ...value.pending].map((item) => [
+                      item.id,
+                      item,
+                    ]),
+                  ).values(),
+                ]
+              : recoverUnconfirmedPending(outbox),
+          }));
         }
       })
       .catch((error) => {
@@ -269,16 +302,21 @@ export function useAgentApp() {
       context = epoch.current;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
+      const observedRevision = transcriptRevision.current;
       try {
         const fresh = await gateway.getRuns(agentId, auth, controller.signal),
           outbox = await gateway.getPending(agentId, auth);
         if (
           !controller.signal.aborted &&
           context === epoch.current &&
-          agentId === agentIdRef.current
+          agentId === agentIdRef.current &&
+          observedRevision === transcriptRevision.current &&
+          !isTransmitting(agentId, context)
         ) {
-          setRuns((value) => mergeRuns(value, fresh));
-          setPending(outbox);
+          setTranscript((value) => ({
+            runs: mergeRuns(value.runs, fresh),
+            pending: recoverUnconfirmedPending(outbox),
+          }));
           setConnectionError('');
         }
       } catch (error) {
@@ -296,6 +334,7 @@ export function useAgentApp() {
 
   const queuedId = runs.find(
     (run) =>
+      run.workflowId === agentId &&
       run.status === 'queued' &&
       (!run.retryAt || Date.parse(run.retryAt) <= Date.now()),
   )?.id;
@@ -439,7 +478,7 @@ export function useAgentApp() {
     agentIdRef.current = agent.id;
     setAgentId(agent.id);
     setShowAgents(false);
-    setSending(false);
+    setSending(isTransmitting(agent.id, epoch.current));
   };
   const makePrimary = async (agent: Agent) => {
     const auth = sessionRef.current;
@@ -487,25 +526,36 @@ export function useAgentApp() {
         'O agente pertence a outro espaço. Seleciona-o novamente.',
       );
     const context = epoch.current;
+    const finishTransmission = beginTransmission(selected.id, context);
+    let pendingMessageId: string | undefined;
     setSending(true);
     try {
-      const task = gateway.createRun(
+      const run = await gateway.createRun(
         selected.id,
         content,
         attachment ? [attachment] : [],
         auth,
         undefined,
         (item) => {
-          if (context === epoch.current && selected.id === agentIdRef.current)
-            setPending((value) => [
-              ...value.filter((entry) => entry.id !== item.id),
-              item,
-            ]);
+          pendingMessageId = item.id;
+          if (context === epoch.current && selected.id === agentIdRef.current) {
+            transcriptRevision.current++;
+            setTranscript((value) => ({
+              ...value,
+              pending: [
+                ...value.pending.filter((entry) => entry.id !== item.id),
+                { ...item, files: [...item.files] },
+              ],
+            }));
+          }
         },
       );
-      const run = await task;
       if (context === epoch.current && selected.id === agentIdRef.current) {
-        setRuns((value) => mergeRuns(value, [run]));
+        transcriptRevision.current++;
+        setTranscript((value) => ({
+          runs: mergeRuns(value.runs, [run]),
+          pending: acknowledgePending(value.pending, pendingMessageId, run),
+        }));
         await refreshPending(selected.id, auth, context);
       }
     } catch (error) {
@@ -514,26 +564,43 @@ export function useAgentApp() {
         await refreshPending(selected.id, auth, context);
       throw error;
     } finally {
+      finishTransmission();
       if (context === epoch.current && selected.id === agentIdRef.current)
-        setSending(false);
+        setSending(isTransmitting(selected.id, context));
     }
   };
   const retry = async (pendingId: string) => {
     const auth = sessionRef.current;
     if (!auth || !agentId) return;
     const context = epoch.current;
+    const finishTransmission = beginTransmission(agentId, context);
     setSending(true);
+    setTranscript((value) => ({
+      ...value,
+      pending: value.pending.map((item) =>
+        item.id === pendingId
+          ? { ...item, status: 'sending', error: undefined }
+          : item,
+      ),
+    }));
     try {
       const run = await gateway.retryMessage(agentId, pendingId, auth);
       if (context === epoch.current && agentId === agentIdRef.current) {
-        setRuns((value) => mergeRuns(value, [run]));
+        transcriptRevision.current++;
+        setTranscript((value) => ({
+          runs: mergeRuns(value.runs, [run]),
+          pending: acknowledgePending(value.pending, pendingId, run),
+        }));
         await refreshPending(agentId, auth, context);
       }
     } catch (error) {
       fail(error, context);
-    } finally {
       if (context === epoch.current && agentId === agentIdRef.current)
-        setSending(false);
+        await refreshPending(agentId, auth, context);
+    } finally {
+      finishTransmission();
+      if (context === epoch.current && agentId === agentIdRef.current)
+        setSending(isTransmitting(agentId, context));
     }
   };
   const control = async (run: AgentRun, operation: RunOperation) => {
@@ -544,7 +611,10 @@ export function useAgentApp() {
     try {
       const fresh = await gateway.controlRun(run, operation, auth);
       if (context === epoch.current && run.workflowId === agentIdRef.current)
-        setRuns((value) => mergeRuns(value, [fresh]));
+        setTranscript((value) => ({
+          ...value,
+          runs: mergeRuns(value.runs, [fresh]),
+        }));
     } catch (error) {
       fail(error, context);
     } finally {
@@ -553,15 +623,31 @@ export function useAgentApp() {
     }
   };
   async function refreshPending(id: string, auth: Session, context: number) {
+    const observedRevision = transcriptRevision.current;
     const outbox = await gateway.getPending(id, auth);
-    if (context === epoch.current && id === agentIdRef.current)
-      setPending(outbox);
+    if (
+      context === epoch.current &&
+      id === agentIdRef.current &&
+      observedRevision === transcriptRevision.current
+    )
+      setTranscript((value) => ({
+        ...value,
+        pending: isTransmitting(id, context)
+          ? outbox
+          : recoverUnconfirmedPending(outbox),
+      }));
   }
   const discardPending = async (pendingId: string) => {
     const auth = sessionRef.current,
       id = agentIdRef.current,
       context = epoch.current;
     if (!auth || !id) return;
+    if (isTransmitting(id, context)) {
+      setNotice(
+        'Aguarda a confirmação do envio antes de remover esta mensagem.',
+      );
+      return;
+    }
     try {
       await gateway.discardPending(id, pendingId, auth);
       await refreshPending(id, auth, context);
@@ -665,7 +751,7 @@ export function useAgentApp() {
     setShowAgents,
     profile,
     profileKnown,
-    runs,
+    runs: runs.filter((run) => run.workflowId === agentId),
     messages: conversationMessages(agentId || '', runs, pending),
     captures,
     credentials,

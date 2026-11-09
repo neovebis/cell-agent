@@ -177,16 +177,47 @@ export function workflowAgent(row: Record<string, any>): Agent {
   };
 }
 
+export function acknowledgePending(
+  pending: PendingMessage[],
+  pendingId: string | undefined,
+  run: Pick<AgentRun, 'id' | 'workflowId'>,
+): PendingMessage[] {
+  return pending.map((item) =>
+    item.id === pendingId && item.workflowId === run.workflowId
+      ? { ...item, runId: run.id, status: 'sent', files: [], error: undefined }
+      : item,
+  );
+}
+export function recoverUnconfirmedPending(
+  pending: PendingMessage[],
+): PendingMessage[] {
+  return pending.map((item) =>
+    item.status === 'sending'
+      ? {
+          ...item,
+          status: 'failed',
+          error:
+            'Este envio ficou sem confirmação. Repete a mesma mensagem para confirmar o resultado.',
+        }
+      : item,
+  );
+}
+
 export function conversationMessages(
   workflowId: string,
   runs: AgentRun[],
   pending: PendingMessage[],
 ): AgentMessage[] {
-  const knownRuns = new Set(runs.map((run) => run.id));
+  const visibleRuns = runs.filter((run) => run.workflowId === workflowId);
+  const knownRuns = new Set(visibleRuns.map((run) => run.id));
+  const localIds = new Map<string, string>();
+  for (const item of pending)
+    if (item.workflowId === workflowId && item.runId)
+      localIds.set(item.runId, item.id);
   const messages: AgentMessage[] = [];
-  for (const run of runs) {
+  for (const run of visibleRuns) {
     messages.push({
-      id: `user:${run.id}`,
+      id: localIds.get(run.id) || `user:${run.id}`,
       agentId: workflowId,
       runId: run.id,
       role: 'user',
