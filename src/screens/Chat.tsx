@@ -89,6 +89,8 @@ export function ChatScreen(props: Props) {
     setCreationStep(1);
   };
   const draft = props.draft;
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
   const setDraft = props.onDraftChange;
   const [showTools, setShowTools] = useState(false);
   const attachment = props.attachment;
@@ -963,7 +965,7 @@ export function ChatScreen(props: Props) {
         </Animated.View>
         <TextInput
           value={draft}
-          onChangeText={setDraft}
+          onChangeText={text => { latestDraft.current = text; setDraft(text); }}
           multiline
           placeholder="Mensagem…"
           placeholderTextColor={C.muted}
@@ -973,7 +975,7 @@ export function ChatScreen(props: Props) {
             setInputHeight(
               Math.max(
                 40,
-                Math.min(116, Math.ceil(event.nativeEvent.contentSize.height)),
+                latestDraft.current ? Math.min(116, Math.ceil(event.nativeEvent.contentSize.height)) : 40,
               ),
             )
           }
@@ -989,6 +991,7 @@ export function ChatScreen(props: Props) {
           onPress={async () => {
             if ((!draft.trim() && !attachment) || props.busy) return;
             const text = draft.trim();
+            latestDraft.current = '';
             const curAtt = attachment;
             setDraft('');
             setAttachment(null);

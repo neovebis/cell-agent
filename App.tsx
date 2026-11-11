@@ -200,7 +200,7 @@ function Root() {
       {!app.session ? (
         <Login busy={app.loginBusy} onSubmit={app.login} />
       ) : (
-        <>
+        <View style={{flex:1,position:'relative'}}>
           {tab === 'Chat' && (
             <View
               style={{ flex: 1 }}
@@ -210,6 +210,7 @@ function Root() {
               }
             >
               <ChatScreen
+              key={app.showAgents ? 'agents' : app.activeAgent?.id || 'chat'}
                 agents={app.agents}
                 activeAgent={app.showAgents ? null : app.activeAgent}
                 messages={app.messages}
@@ -401,7 +402,7 @@ function Root() {
               </Pressable>
             </View>
           )}
-        </>
+        </View>
       )}
     </View>
   );
