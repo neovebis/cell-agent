@@ -3,7 +3,7 @@ import type { CellCatalogEntry } from "../types";
 export const CELL_CATALOG_SOURCE = {
   "source": "https://cell-griot.pages.dev/assets/public-navigation-CiSXUAs7.js",
   "sha256": "3420bc9cbb9ef9e0d3955979022e9bb0fa7d5541a8443c82434cb40cf6536ce3",
-  "synchronizedAt": "2026-11-11T17:46:40.624Z",
+  "synchronizedAt": "2026-11-11T18:23:07.146Z",
   "visibleCount": 36
 };
 export const CELL_CATALOG: readonly CellCatalogEntry[] = [

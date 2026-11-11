@@ -10,6 +10,7 @@ test('o catálogo contém a paleta completa do site e os seus símbolos reais', 
       'utf8',
     ),
   );
+  for(const key of ['lucide:mail','lucide:plug','lucide:key','lucide:shield']) assert.ok(icons[key],key+' must preserve its connector symbol');
   assert.equal(paletteCells.length, 36);
   assert.equal(
     paletteCells.filter((cell) => cell.id.startsWith('artcraft_')).length,
