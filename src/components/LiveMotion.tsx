@@ -1,4 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 import type { ViewStyle } from 'react-native';
 import Motion, {
   EXPRESSIONS,
@@ -45,21 +47,31 @@ function pickExpression(current: ExpressionId): ExpressionId {
   return pool[0] ?? 'normal';
 }
 
-export function LiveMotion({
+export const LiveMotion = memo(function LiveMotion({
   size = 86,
   shape = 'circle',
   colorId = 'black',
   style,
+  active = true,
 }: {
   size?: number;
   shape?: ShapeId;
   colorId?: ColorId;
   style?: ViewStyle;
+  active?: boolean;
 }) {
+  const reduced = useReducedMotion();
+  const [foreground, setForeground] = useState(
+    AppState.currentState !== 'background',
+  );
+  const enabled = active && foreground;
   const ref = useRef<MotionHandle>(null);
   const [expression, setExpression] = useState<ExpressionId>('normal');
   const exprRef = useRef<ExpressionId>('normal');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lookTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const firstChange = useRef(true);
 
   const apply = (id: ExpressionId) => {
@@ -74,29 +86,45 @@ export function LiveMotion({
       const current = exprRef.current;
       // Depois de uma expressão "forte", regressa muitas vezes ao normal.
       const next =
-        current !== 'normal' && Math.random() < 0.45 ? 'normal' : pickExpression(current);
+        current !== 'normal' && Math.random() < 0.45
+          ? 'normal'
+          : pickExpression(current);
       apply(next);
 
       if (Math.random() < 0.35) {
-        const dirs = LOOK_DIRECTIONS.filter((d) => d !== 'center') as Direction[];
+        const dirs = LOOK_DIRECTIONS.filter(
+          (d) => d !== 'center',
+        ) as Direction[];
         ref.current?.lookTo(dirs[Math.floor(Math.random() * dirs.length)]);
-        setTimeout(() => ref.current?.resetLook(), rand(700, 1600));
+        clearTimeout(lookTimer.current);
+        lookTimer.current = setTimeout(
+          () => ref.current?.resetLook(),
+          rand(700, 1600),
+        );
       } else if (Math.random() < 0.3) {
         ref.current?.blink(Math.random() < 0.3 ? 2 : 1);
       }
 
-      const hold = next === 'ko' || next === 'dizzy' ? rand(2200, 3200) : rand(2000, 4800);
+      const hold =
+        next === 'ko' || next === 'dizzy' ? rand(2200, 3200) : rand(2000, 4800);
       schedule(hold);
     }, delay);
   };
 
   useEffect(() => {
-    schedule(rand(1400, 2600));
+    const subscription = AppState.addEventListener('change', (state) =>
+      setForeground(state === 'active'),
+    );
+    return () => subscription.remove();
+  }, []);
+  useEffect(() => {
+    if (enabled && !reduced) schedule(rand(1400, 2600));
     return () => {
       if (timer.current) clearTimeout(timer.current);
+      clearTimeout(lookTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [enabled, reduced]);
 
   // Reage quando a forma ou a cor mudam (ex.: na escolha do avatar).
   useEffect(() => {
@@ -106,7 +134,7 @@ export function LiveMotion({
     }
     apply(REACTIONS[Math.floor(Math.random() * REACTIONS.length)]);
     ref.current?.blink(1);
-    schedule(rand(1800, 3000));
+    if (enabled && !reduced) schedule(rand(1800, 3000));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shape, colorId]);
 
@@ -117,9 +145,11 @@ export function LiveMotion({
       shape={shape}
       colorId={colorId}
       expression={expression}
-      idle
+      active={enabled}
+      idle={enabled && !reduced}
+      reduceMotion={reduced}
       touchMode="look"
       style={style}
     />
   );
-}
+});

@@ -3,7 +3,11 @@
     "name": "CELL AGENT",
     "slug": "cell-agent-mobile",
     "scheme": "cellagent",
-    "version": "0.2.2",
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "version": "0.3.2",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFFFFF",
@@ -21,7 +25,8 @@
     },
     "android": {
       "package": "com.cellsystem.agent.mobile",
-      "versionCode": 5,
+      "versionCode": 8,
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO"
@@ -40,7 +45,6 @@
           "microphonePermission": "Gravar vídeos com áudio."
         }
       ],
-      "expo-notifications",
       "expo-secure-store"
     ],
     "extra": {

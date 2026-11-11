@@ -1,153 +1,176 @@
 name: Build Android APK
-
 on:
   push:
-    branches:
-      - main
-      - master
-      - 'fix/**'
-      - 'release/**'
+    branches: [main, master, 'fix/**', 'release/**']
   workflow_dispatch:
-
+    inputs:
+      candidate_run_id:
+        description: Optional run containing a compiled APK candidate to verify without rebuilding
+        type: string
+        required: false
+        default: ''
 permissions:
-  contents: write
-
+  contents: read
+concurrency:
+  group: cell-agent-apk-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   build:
-    name: Build Android APK
+    if: ${{ inputs.candidate_run_id == '' }}
+    name: Build signed Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_PUBLIC_CELL_API_URL: https://cell-griot.pages.dev
+      EXPO_PUBLIC_SUPABASE_URL: https://oxulnwbwpfxwjbvxlrga.supabase.co
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aEBNlthmZizezIeYKodSnw_0ndTYG42
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-
-      - name: Setup Java JDK 17
-        uses: actions/setup-java@v4
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '17'
-
-      - name: Accept Android SDK Licenses
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - name: Check persistent signing configuration
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "ANDROID_HOME is $ANDROID_HOME"
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Prebuild Android project
+          test -n "$KEYSTORE_BASE64" && test -n "$KEY_ALIAS" && test -n "$STORE_PASS" && test -n "$KEY_PASS" || { echo 'Persistent Android signing secrets are required. No replacement key will be generated.'; exit 1; }
+      - name: Install and check the app
+        run: |
+          npm ci --no-audit --no-fund
+          npx expo install --check
+          npm run typecheck
+          npm test
+      - name: Read app version
+        id: metadata
+        run: |
+          node -e 'const c=require("./app.json").expo; if(c.version!==require("./package.json").version || !Number.isInteger(c.android.versionCode)) process.exit(1); console.log("version="+c.version); console.log("versionCode="+c.android.versionCode)' >> "$GITHUB_OUTPUT"
+      - name: Generate native Android project
         run: npx expo prebuild --platform android --clean --no-install
+      - name: Configure persistent release signing
         env:
-          EXPO_PUBLIC_CELL_API_URL: https://cell-griot.pages.dev
-          EXPO_PUBLIC_SUPABASE_URL: https://oxulnwbwpfxwjbvxlrga.supabase.co
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aEBNlthmZizezIeYKodSnw_0ndTYG42
-
-      - name: Setup Keystore & Signing Config
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
         run: |
-          mkdir -p android/app
-          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            echo "Using custom keystore from repository secrets"
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/release.keystore
-            export KEY_ALIAS="${{ secrets.KEYSTORE_ALIAS }}"
-            export STORE_PASS="${{ secrets.KEYSTORE_PASSWORD }}"
-            export KEY_PASS="${{ secrets.KEY_PASSWORD }}"
-          else
-            echo "Generating self-signed release keystore for standalone APK (RSA 2048, SHA256withRSA)"
-            keytool -genkeypair -v -storetype PKCS12 -keystore android/app/release.keystore \
-              -alias cellagent -keyalg RSA -keysize 2048 -sigalg SHA256withRSA -validity 10000 \
-              -dname "CN=CELL AGENT, OU=Mobile, O=CellSystem, L=Luanda, S=Luanda, C=AO" \
-              -storepass cellagent123 -keypass cellagent123
-            export KEY_ALIAS="cellagent"
-            export STORE_PASS="cellagent123"
-            export KEY_PASS="cellagent123"
-          fi
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          keytool -list -keystore android/app/release.keystore -alias "$KEY_ALIAS" -storepass:env STORE_PASS > /dev/null
           node scripts/configure-signing.js
-
-      - name: Build Android Release APK
+      - name: Build release APK
+        working-directory: android
         env:
-          EXPO_PUBLIC_CELL_API_URL: https://cell-griot.pages.dev
-          EXPO_PUBLIC_SUPABASE_URL: https://oxulnwbwpfxwjbvxlrga.supabase.co
-          EXPO_PUBLIC_SUPABASE_ANON_KEY: sb_publishable_aEBNlthmZizezIeYKodSnw_0ndTYG42
-          GRADLE_OPTS: "-Xmx3072m -XX:MaxMetaspaceSize=512m -Dorg.gradle.jvmargs=-Xmx3072m"
+          KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+          GRADLE_OPTS: '-Xmx3072m -XX:MaxMetaspaceSize=512m -Dorg.gradle.jvmargs=-Xmx3072m'
         run: |
-          cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
-
-      - name: Verify and Validate Release APK
-        run: |
-          RELEASE_APK="android/app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$RELEASE_APK" ]; then
-            echo "FATAL: Release APK not found at $RELEASE_APK!"
-            echo "Directory contents:"
-            ls -la android/app/build/outputs/apk/release/ || true
-            exit 1
-          fi
-
-          BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
-          echo "Using Android build tools from $BUILD_TOOLS_DIR"
-
-          echo "=== 1. ZIPALIGN VERIFICATION ==="
-          "$BUILD_TOOLS_DIR/zipalign" -c -v 4 "$RELEASE_APK"
-
-          echo "=== 2. APKSIGNER VERIFICATION ==="
-          "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$RELEASE_APK"
-
-          echo "=== 3. AAPT2 BADGING & MANIFEST INSPECTION ==="
-          "$BUILD_TOOLS_DIR/aapt2" dump badging "$RELEASE_APK" | head -n 35
-
-          echo "=== 4. INTEGRITY & CHECKSUM ==="
-          sha256sum "$RELEASE_APK"
-
-          mkdir -p build-output
-          cp "$RELEASE_APK" build-output/cell-agent-mobile-v0.2.2.apk
-          sha256sum build-output/cell-agent-mobile-v0.2.2.apk > build-output/cell-agent-mobile-v0.2.2.apk.sha256
-          ls -lh build-output/
-
-      - name: Upload APK Artifact
+          ./gradlew assembleRelease --no-daemon --max-workers=2 --build-cache --stacktrace
+      - name: Preserve compiled APK candidate
         uses: actions/upload-artifact@v4
         with:
-          name: cell-agent-mobile-v0.2.2-apk
+          name: cell-agent-native-apk-candidate
+          path: android/app/build/outputs/apk/release/app-release.apk
+          retention-days: 5
+          if-no-files-found: error
+      - name: Verify and package the APK
+        env:
+          APP_VERSION: ${{ steps.metadata.outputs.version }}
+          APP_VERSION_CODE: ${{ steps.metadata.outputs.versionCode }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/verify-android-apk.sh
+      - name: Upload installable app
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-agent-mobile-v${{ steps.metadata.outputs.version }}-apk
           path: build-output/
           retention-days: 30
-
-      - name: Publish GitHub Release
-        if: github.ref == 'refs/heads/main'
+          if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f android/app/release.keystore
+  verify_candidate:
+    if: ${{ inputs.candidate_run_id != '' }}
+    name: Verify compiled Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Check APK metadata helpers
+        run: npm test
+      - name: Check candidate provenance and download
         env:
+          SOURCE_RUN_ID: ${{ inputs.candidate_run_id }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK_FILE="build-output/cell-agent-mobile-v0.2.2.apk"
-          SHA_FILE="build-output/cell-agent-mobile-v0.2.2.apk.sha256"
-          if [ -f "$APK_FILE" ]; then
-            echo "Publishing release with APK: $APK_FILE"
-            if gh release view v0.2.2 >/dev/null 2>&1; then
-              gh release upload v0.2.2 "$APK_FILE" "$SHA_FILE" --clobber
-            else
-              cat << 'EOF' > release_notes.md
-              ### CELL AGENT Mobile v0.2.2 - Correcao Definitiva de Instalacao APK
-
-              Correcao comprovada de empacotamento, assinatura e compatibilidade Android:
-              - Assinatura release v1 (JAR signing) e v2 (APK Signature Scheme) ativadas e validadas.
-              - Correcao do script de injecao Gradle para mapear de forma robusta o bloco release.
-              - Remocao de fallback silencioso para debug e validacao estrita no CI (zipalign 4-byte e apksigner).
-              - VersionCode explicito (5) e incremento de versao (0.2.2).
-              - Todas as funcionalidades e design preservados:
-                - Menu de Acoes flutuante suspenso com cantos arredondados (Criar missao, Camara, Imagem ou video, Ficheiros, Capture e Plugins).
-                - Animacao elegante do botao '+' rodando 45 graus para 'x'.
-                - Opcao de copiar mensagem ao tocar na mensagem do utilizador.
-                - Cartao 'Avancado' no fim do Perfil abrindo modal dedicada com Cofre, Seguranca e Endpoints.
-              EOF
-              gh release create v0.2.2 "$APK_FILE" "$SHA_FILE" \
-                --title "CELL AGENT Mobile v0.2.2" \
-                --notes-file release_notes.md
-            fi
-          fi
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > "$RUNNER_TEMP/candidate-run.json"
+          test "$(jq -r .path "$RUNNER_TEMP/candidate-run.json")" = '.github/workflows/build-apk.yml'
+          SOURCE_COMMIT=$(jq -r .head_sha "$RUNNER_TEMP/candidate-run.json")
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags --depth=1 origin "$SOURCE_COMMIT"
+          git diff --quiet "$SOURCE_COMMIT" HEAD -- . ':!.github/**' ':!tests/**' ':!README.md' ':!scripts/read-apk-certificate.cjs' ':!scripts/verify-android-apk.sh'
+          gh run download "$SOURCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name cell-agent-native-apk-candidate --dir android/app/build/outputs/apk/release
+          test -s android/app/build/outputs/apk/release/app-release.apk
+          echo "APK_SOURCE_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
+      - name: Read app version
+        id: metadata
+        run: |
+          node -e 'const c=require("./app.json").expo; if(c.version!==require("./package.json").version || !Number.isInteger(c.android.versionCode)) process.exit(1); console.log("version="+c.version); console.log("versionCode="+c.android.versionCode)' >> "$GITHUB_OUTPUT"
+      - name: Check expected signing identity
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$KEY_ALIAS" && test -n "$STORE_PASS"
+          umask 077
+          mkdir -p android/app
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+          keytool -list -keystore android/app/release.keystore -alias "$KEY_ALIAS" -storepass:env STORE_PASS > /dev/null
+      - name: Verify and package the APK
+        env:
+          APP_VERSION: ${{ steps.metadata.outputs.version }}
+          APP_VERSION_CODE: ${{ steps.metadata.outputs.versionCode }}
+          KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/verify-android-apk.sh
+      - name: Upload installable app
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-agent-mobile-v${{ steps.metadata.outputs.version }}-apk
+          path: build-output/
+          retention-days: 30
+          if-no-files-found: error
+      - name: Remove temporary signing material
+        if: always()
+        run: rm -f android/app/release.keystore

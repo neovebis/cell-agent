@@ -23,10 +23,6 @@ const options = [
   ['Galeria', 'images-outline'],
   ['Documento', 'document-text-outline'],
   ['Texto', 'text-outline'],
-  ['Vídeo', 'videocam-outline'],
-  ['Áudio', 'mic-outline'],
-  ['Ecrã', 'phone-portrait-outline'],
-  ['Localização', 'location-outline'],
 ] as const;
 
 export function CaptureScreen({
@@ -76,7 +72,7 @@ export function CaptureScreen({
       }
       if (['Áudio', 'Ecrã', 'Localização'].includes(kind)) {
         onError(
-          `A captura de ${kind.toLowerCase()} exige permissão de dispositivo adicional nesta versão.`
+          `A captura de ${kind.toLowerCase()} exige permissão de dispositivo adicional nesta versão.`,
         );
         return;
       }
@@ -87,6 +83,8 @@ export function CaptureScreen({
         });
         if (result.canceled || !result.assets.length) return;
         const a = result.assets[0];
+        if (a.size && a.size > 2 * 1024 * 1024)
+          throw new Error('Cada ficheiro pode ter até 2 MiB.');
 
         // Read base64
         let base64 = '';
@@ -110,6 +108,8 @@ export function CaptureScreen({
           title: a.name,
           source: 'Documento',
           type: 'document',
+          mimeType: a.mimeType,
+          size: a.size,
           uri: a.uri,
           base64,
           note,
@@ -120,7 +120,7 @@ export function CaptureScreen({
       let result: ImagePicker.ImagePickerResult;
       if (kind === 'Galeria') {
         result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images', 'videos'],
+          mediaTypes: ['images'],
           quality: 0.85,
           base64: true,
         });
@@ -142,21 +142,33 @@ export function CaptureScreen({
       const type = a.type === 'video' ? 'video' : 'image';
 
       await save({
-        title: a.fileName || `${type === 'video' ? 'Vídeo' : 'Imagem'} ${new Date().toLocaleDateString('pt-PT')}`,
+        title: a.fileName || `imagem_${Date.now()}.jpg`,
         source: kind,
         type,
         uri: a.uri,
         base64: a.base64 || undefined,
+        mimeType: a.mimeType || 'image/jpeg',
+        size: a.fileSize,
         note,
       });
     } catch (e) {
-      onError(e instanceof Error ? e.message : 'Não foi possível capturar o conteúdo.');
+      onError(
+        e instanceof Error
+          ? e.message
+          : 'Não foi possível capturar o conteúdo.',
+      );
     }
   };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.white }}>
-      <ScrollView contentContainerStyle={{ padding: 24, paddingTop: 36, paddingBottom: 135 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: 20,
+          paddingTop: 24,
+          paddingBottom: 104,
+        }}
+      >
         <PageTitle kicker="O mundo físico entra aqui" title="Capture" />
 
         {/* Capture Trigger Card */}
@@ -168,16 +180,16 @@ export function CaptureScreen({
           <View style={styles.cameraCircle}>
             <Icon name="camera-outline" size={40} color={C.white} />
           </View>
-          <Txt weight="700" size={29} style={{ marginTop: 28 }}>
+          <Txt weight="600" size={29} style={{ marginTop: 28 }}>
             Capturar
           </Txt>
           <Txt color={C.muted} size={16} style={{ marginTop: 8 }}>
-            Foto, Documento, Galeria ou Texto
+            Foto, Documento, Galeria ou Texto · só neste dispositivo
           </Txt>
         </Pressable>
 
         <Txt
-          weight="700"
+          weight="600"
           color={C.muted}
           size={13}
           style={{ marginTop: 29, marginBottom: 19, letterSpacing: 0.5 }}
@@ -191,24 +203,35 @@ export function CaptureScreen({
               Nenhum conteúdo capturado ainda
             </Txt>
             <Txt color={C.muted} size={13}>
-              Toca no cartão Capturar acima para recolher fotos, documentos ou apontamentos. Podes
-              enviá-los diretamente para os teus agentes.
+              Toca no cartão Capturar acima para recolher fotos, documentos ou
+              apontamentos. Podes enviá-los diretamente para os teus agentes.
             </Txt>
           </Card>
         ) : (
           items.map((item) => (
-            <Pressable key={item.id} onPress={() => setSelected(item)} style={{ marginBottom: 10 }}>
-              <Card style={{ padding: 18, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Pressable
+              key={item.id}
+              onPress={() => setSelected(item)}
+              style={{ marginBottom: 10 }}
+            >
+              <Card
+                style={{
+                  padding: 18,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                }}
+              >
                 <View style={styles.itemIconCircle}>
                   <Icon
                     name={
                       item.type === 'image'
                         ? 'image-outline'
                         : item.type === 'video'
-                        ? 'videocam-outline'
-                        : item.type === 'document'
-                        ? 'document-text-outline'
-                        : 'text-outline'
+                          ? 'videocam-outline'
+                          : item.type === 'document'
+                            ? 'document-text-outline'
+                            : 'text-outline'
                     }
                     size={22}
                   />
@@ -218,7 +241,8 @@ export function CaptureScreen({
                     {item.title}
                   </Txt>
                   <Txt color={C.muted} size={12}>
-                    {item.source} · {new Date(item.createdAt).toLocaleDateString('pt-PT')}
+                    {item.source} ·{' '}
+                    {new Date(item.createdAt).toLocaleDateString('pt-PT')}
                   </Txt>
                 </View>
                 <View style={styles.source}>
@@ -240,10 +264,13 @@ export function CaptureScreen({
         onRequestClose={() => setCaptureOpen(false)}
       >
         <View style={styles.backdrop}>
-          <Pressable style={{ flex: 1 }} onPress={() => setCaptureOpen(false)} />
+          <Pressable
+            style={{ flex: 1 }}
+            onPress={() => setCaptureOpen(false)}
+          />
           <View style={styles.sheet}>
             <View style={styles.sheetGrab} />
-            <Txt size={18} weight="700">
+            <Txt size={18} weight="600">
               Nova Captura
             </Txt>
             <TextInput
@@ -285,19 +312,44 @@ export function CaptureScreen({
         presentationStyle="pageSheet"
         onRequestClose={() => setTextOpen(false)}
       >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 25, paddingTop: 45 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Txt weight="700" size={27}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: C.white,
+            padding: 25,
+            paddingTop: 45,
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <Txt weight="600" size={27}>
               Capturar texto
             </Txt>
-            <RoundButton icon="close" label="Fechar" onPress={() => setTextOpen(false)} />
+            <RoundButton
+              icon="close"
+              label="Fechar"
+              onPress={() => setTextOpen(false)}
+            />
           </View>
           <TextInput
             multiline
             value={textValue}
             onChangeText={setTextValue}
             placeholder="Escreve uma nota, instrução ou apontamento para o agente..."
-            style={[styles.noteInput, { marginTop: 28, flex: 1, textAlignVertical: 'top', borderRadius: 25 }]}
+            style={[
+              styles.noteInput,
+              {
+                marginTop: 28,
+                flex: 1,
+                textAlignVertical: 'top',
+                borderRadius: 25,
+              },
+            ]}
             placeholderTextColor={C.muted}
           />
           <Pressable
@@ -310,12 +362,15 @@ export function CaptureScreen({
                 note: textValue.trim(),
               })
             }
-            style={[styles.saveButton, (saving || !textValue.trim()) && { opacity: 0.4 }]}
+            style={[
+              styles.saveButton,
+              (saving || !textValue.trim()) && { opacity: 0.4 },
+            ]}
           >
             {saving ? (
               <ActivityIndicator color={C.white} />
             ) : (
-              <Txt color={C.white} weight="700">
+              <Txt color={C.white} weight="600">
                 Guardar na biblioteca
               </Txt>
             )}
@@ -333,18 +388,34 @@ export function CaptureScreen({
         <View style={styles.backdrop}>
           <Pressable style={{ flex: 1 }} onPress={() => setSelected(null)} />
           <View style={styles.sheet}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <Txt size={20} weight="700" numberOfLines={1} style={{ flex: 1 }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 12,
+              }}
+            >
+              <Txt size={20} weight="600" numberOfLines={1} style={{ flex: 1 }}>
                 {selected?.title}
               </Txt>
-              <RoundButton icon="close" label="Fechar" onPress={() => setSelected(null)} />
+              <RoundButton
+                icon="close"
+                label="Fechar"
+                onPress={() => setSelected(null)}
+              />
             </View>
 
             {selected?.type === 'image' && !!selected.uri ? (
               <Image
                 resizeMode="contain"
                 source={{ uri: selected.uri }}
-                style={{ width: '100%', height: 240, borderRadius: 20, backgroundColor: C.surface2 }}
+                style={{
+                  width: '100%',
+                  height: 240,
+                  borderRadius: 20,
+                  backgroundColor: C.surface2,
+                }}
               />
             ) : selected?.type === 'text' ? (
               <Card style={{ maxHeight: 200 }}>
@@ -368,7 +439,7 @@ export function CaptureScreen({
               style={styles.sendAgentButton}
             >
               <Icon name="paper-plane-outline" color={C.white} size={20} />
-              <Txt color={C.white} weight="700" size={16}>
+              <Txt color={C.white} weight="600" size={16}>
                 Enviar para o Agente
               </Txt>
             </Pressable>
@@ -383,7 +454,14 @@ export function CaptureScreen({
         presentationStyle="pageSheet"
         onRequestClose={() => setAgentPickerOpen(false)}
       >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 24, paddingTop: 40 }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: C.white,
+            padding: 20,
+            paddingTop: 28,
+          }}
+        >
           <View
             style={{
               flexDirection: 'row',
@@ -393,14 +471,18 @@ export function CaptureScreen({
             }}
           >
             <View>
-              <Txt size={24} weight="700">
+              <Txt size={24} weight="600">
                 Escolher Agente
               </Txt>
               <Txt size={13} color={C.muted}>
                 Enviar este anexo para execução
               </Txt>
             </View>
-            <RoundButton icon="close" label="Fechar" onPress={() => setAgentPickerOpen(false)} />
+            <RoundButton
+              icon="close"
+              label="Fechar"
+              onPress={() => setAgentPickerOpen(false)}
+            />
           </View>
 
           <ScrollView style={{ flex: 1 }}>
@@ -416,10 +498,17 @@ export function CaptureScreen({
                 }}
                 style={{ marginBottom: 12 }}
               >
-                <Card style={{ padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <Card
+                  style={{
+                    padding: 18,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 14,
+                  }}
+                >
                   <AgentAvatar size={44} />
                   <View style={{ flex: 1, gap: 4 }}>
-                    <Txt weight="700" size={17}>
+                    <Txt weight="600" size={17}>
                       {ag.name}
                     </Txt>
                     <Txt color={C.muted} size={12} numberOfLines={1}>
@@ -434,7 +523,8 @@ export function CaptureScreen({
             {agents.length === 0 && (
               <Card>
                 <Txt color={C.muted}>
-                  Ainda não tens agentes criados. Cria um agente no separador Chat primeiro.
+                  Ainda não tens agentes criados. Cria um agente no separador
+                  Chat primeiro.
                 </Txt>
               </Card>
             )}
@@ -478,7 +568,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.39)', justifyContent: 'flex-end' },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,.39)',
+    justifyContent: 'flex-end',
+  },
   sheet: {
     borderTopLeftRadius: 34,
     borderTopRightRadius: 34,
@@ -506,7 +600,12 @@ const styles = StyleSheet.create({
     padding: 16,
     color: C.ink,
   },
-  optionGrid: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 10, rowGap: 10 },
+  optionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: 10,
+    rowGap: 10,
+  },
   option: {
     height: 54,
     borderRadius: R.pill,

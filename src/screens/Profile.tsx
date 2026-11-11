@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
+import { apiBaseUrl, supabaseUrl } from '../services/gateway';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
-import { Card, Icon, PageTitle, Pill, RoundButton, Txt } from '../components/UI';
+  Card,
+  Icon,
+  PageTitle,
+  Pill,
+  RoundButton,
+  Txt,
+} from '../components/UI';
 import { C, R } from '../theme';
 import type {
   CredentialVaultItem,
@@ -40,31 +42,49 @@ export function ProfileScreen({
   const [workspaceModal, setWorkspaceModal] = useState(false);
   const [advancedModal, setAdvancedModal] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [activeSection, setActiveSection] = useState<'geral' | 'seguranca' | 'endpoints'>('geral');
+  const [activeSection, setActiveSection] = useState<
+    'geral' | 'seguranca' | 'endpoints'
+  >('geral');
 
-  const currentWorkspace =
-    workspaces.find((w) => w.id === session?.workspaceId) || {
-      id: session?.workspaceId || 'ws_default',
-      name: 'Espaço Pessoal (Padrão)',
-      plan: 'Pro',
-    };
+  const currentWorkspace = workspaces.find(
+    (w) => w.id === session?.workspaceId,
+  ) || {
+    id: session?.workspaceId || 'ws_default',
+    name: 'Espaço ativo',
+    plan: '',
+  };
 
   const handleCopyEndpoint = (label: string, url: string) => {
-    Alert.alert(label, url);
+    void Clipboard.setStringAsync(url)
+      .then(() => onInfo(label + ' copiado.'))
+      .catch(() => onInfo('Não foi possível copiar.'));
   };
 
   return (
     <View style={{ flex: 1, backgroundColor: C.white }}>
-      <ScrollView contentContainerStyle={{ padding: 24, paddingTop: 36, paddingBottom: 135 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: 20,
+          paddingTop: 24,
+          paddingBottom: 104,
+        }}
+      >
         <PageTitle kicker="Gestão da Conta & Espaço" title="Perfil" />
 
         {/* User Identity Card */}
-        <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 16, padding: 20 }}>
+        <Card
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 16,
+            padding: 20,
+          }}
+        >
           <View style={styles.avatarCircle}>
             <Icon name="person-outline" color={C.white} size={28} />
           </View>
           <View style={{ flex: 1, gap: 4 }}>
-            <Txt size={20} weight="700">
+            <Txt size={20} weight="600">
               {session?.displayName ?? 'Utilizador'}
             </Txt>
             <Txt size={12} color={C.muted}>
@@ -79,22 +99,36 @@ export function ProfileScreen({
         </Card>
 
         {/* WORKSPACE BAR (Active Workspace Switcher) */}
-        <Txt weight="700" color={C.muted} size={12} style={{ marginTop: 26, marginBottom: 10, letterSpacing: 0.5 }}>
+        <Txt
+          weight="600"
+          color={C.muted}
+          size={12}
+          style={{ marginTop: 26, marginBottom: 10, letterSpacing: 0.5 }}
+        >
           ESPAÇO DE TRABALHO ATIVO
         </Txt>
         <Pressable onPress={() => setWorkspaceModal(true)}>
-          <Card style={{ flexDirection: 'row', alignItems: 'center', padding: 18, gap: 14 }}>
+          <Card
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              padding: 12,
+              gap: 14,
+            }}
+          >
             <View style={styles.workspaceIcon}>
               <Icon name="cube-outline" size={22} color={C.ink} />
             </View>
             <View style={{ flex: 1, gap: 3 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Txt weight="700" size={16}>
+              <View
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+              >
+                <Txt weight="600" size={16}>
                   {currentWorkspace.name}
                 </Txt>
                 <View style={styles.planBadge}>
-                  <Txt size={10} weight="700" color={C.white}>
-                    {currentWorkspace.plan || 'PRO'}
+                  <Txt size={10} weight="600" color={C.white}>
+                    {currentWorkspace.plan || 'CELL'}
                   </Txt>
                 </View>
               </View>
@@ -110,10 +144,17 @@ export function ProfileScreen({
         <View style={{ marginTop: 28, gap: 12 }}>
           {/* Card Avançado com Cofre, Segurança e Endpoints */}
           <Pressable onPress={() => setAdvancedModal(true)}>
-            <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 13, padding: 18 }}>
+            <Card
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 13,
+                padding: 12,
+              }}
+            >
               <Icon name="options-outline" />
               <View style={{ flex: 1, gap: 3 }}>
-                <Txt weight="700" size={15}>
+                <Txt weight="600" size={15}>
                   Avançado
                 </Txt>
                 <Txt size={12} color={C.muted}>
@@ -125,14 +166,21 @@ export function ProfileScreen({
           </Pressable>
 
           <Pressable onPress={onNotifications}>
-            <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 13, padding: 18 }}>
+            <Card
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 13,
+                padding: 12,
+              }}
+            >
               <Icon name="notifications-outline" />
               <View style={{ flex: 1, gap: 3 }}>
-                <Txt weight="700" size={15}>
-                  Notificações Push
+                <Txt weight="600" size={15}>
+                  Alertas de tarefas
                 </Txt>
                 <Txt size={12} color={C.muted}>
-                  Receber alertas de conclusões e missões
+                  Consultar a disponibilidade de notificações
                 </Txt>
               </View>
               <Icon name="chevron-forward" color={C.muted} />
@@ -141,8 +189,8 @@ export function ProfileScreen({
 
           {!demo && (
             <Pressable onPress={onSignOut} style={styles.logoutButton}>
-              <Txt color={C.white} weight="700">
-                Terminar sessão
+              <Txt color={C.white} weight="600">
+                Sair e limpar dados locais
               </Txt>
             </Pressable>
           )}
@@ -156,7 +204,14 @@ export function ProfileScreen({
         presentationStyle="pageSheet"
         onRequestClose={() => setAdvancedModal(false)}
       >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 24, paddingTop: 40 }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: C.white,
+            padding: 20,
+            paddingTop: 28,
+          }}
+        >
           <View
             style={{
               flexDirection: 'row',
@@ -165,73 +220,96 @@ export function ProfileScreen({
               marginBottom: 20,
             }}
           >
-            <View>
-              <Txt size={24} weight="700">
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt size={22} weight="600">
                 Avançado
               </Txt>
               <Txt size={13} color={C.muted}>
-                Cofre, segurança e endpoints técnicos
+                Credenciais, segurança e ligações
               </Txt>
             </View>
-            <RoundButton icon="close" label="Fechar" onPress={() => setAdvancedModal(false)} />
+            <RoundButton
+              icon="close"
+              label="Fechar"
+              onPress={() => setAdvancedModal(false)}
+            />
           </View>
 
-          {/* Navigation Tabs inside Advanced Modal */}
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 18 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0, marginBottom: 14 }}
+            contentContainerStyle={{ gap: 6, paddingBottom: 2 }}
+          >
             <Pill
               selected={activeSection === 'geral'}
               onPress={() => setActiveSection('geral')}
-              style={{ flex: 1 }}
+              style={{ minWidth: 88 }}
             >
               Cofre & Vars
             </Pill>
             <Pill
               selected={activeSection === 'seguranca'}
               onPress={() => setActiveSection('seguranca')}
-              style={{ flex: 1 }}
+              style={{ minWidth: 88 }}
             >
               Segurança
             </Pill>
             <Pill
               selected={activeSection === 'endpoints'}
               onPress={() => setActiveSection('endpoints')}
-              style={{ flex: 1 }}
+              style={{ minWidth: 88 }}
             >
               Endpoints
             </Pill>
-          </View>
+          </ScrollView>
 
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }}>
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: 40 }}
+          >
             {/* SECTION 1: GERAL (Cofre & Variáveis Globais) */}
             {activeSection === 'geral' && (
               <View style={{ gap: 18 }}>
                 {/* Credential Vault */}
                 <View style={{ gap: 8 }}>
-                  <Txt weight="700" size={14}>
+                  <Txt weight="600" size={14}>
                     Cofre de Credenciais (Vault)
                   </Txt>
                   <Txt size={12} color={C.muted}>
-                    Chaves de API cifradas em AES-GCM autorizadas para os teus agentes.
+                    Credenciais disponíveis no cofre deste espaço. A app recebe
+                    apenas metadados, nunca as chaves.
                   </Txt>
                   {credentials.length > 0 ? (
                     credentials.map((cred) => (
-                      <Card key={cred.id} style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <Card
+                        key={cred.id}
+                        style={{
+                          padding: 12,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 12,
+                        }}
+                      >
                         <Icon name="key-outline" size={18} />
                         <View style={{ flex: 1 }}>
                           <Txt weight="600" size={14}>
                             {cred.name}
                           </Txt>
                           <Txt size={11} color={C.muted}>
-                            {cred.maskedKey || 'Chave protegida'} · {cred.provider}
+                            {cred.maskedKey || 'Chave protegida'} ·{' '}
+                            {cred.provider}
                           </Txt>
                         </View>
                         <Icon name="lock-closed" size={16} color={C.muted} />
                       </Card>
                     ))
                   ) : (
-                    <Card style={{ padding: 14 }}>
+                    <Card style={{ padding: 12 }}>
                       <Txt size={13} color={C.muted}>
-                        Nenhuma credencial configurada neste espaço. Adiciona chaves OpenAI, Anthropic ou Gemini no painel web para ativar modelos avançados.
+                        Nenhuma credencial configurada neste espaço. Adiciona
+                        chaves OpenAI, Anthropic ou Gemini no painel web para
+                        ativar modelos avançados.
                       </Txt>
                     </Card>
                   )}
@@ -239,7 +317,7 @@ export function ProfileScreen({
 
                 {/* Global Variables */}
                 <View style={{ gap: 8 }}>
-                  <Txt weight="700" size={14}>
+                  <Txt weight="600" size={14}>
                     Variáveis Globais ($vars)
                   </Txt>
                   <Txt size={12} color={C.muted}>
@@ -247,7 +325,15 @@ export function ProfileScreen({
                   </Txt>
                   {variables.length > 0 ? (
                     variables.map((v) => (
-                      <Card key={v.id} style={{ padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <Card
+                        key={v.id}
+                        style={{
+                          padding: 12,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 12,
+                        }}
+                      >
                         <Icon name="code-slash-outline" size={18} />
                         <View style={{ flex: 1 }}>
                           <Txt weight="600" size={14}>
@@ -260,7 +346,7 @@ export function ProfileScreen({
                       </Card>
                     ))
                   ) : (
-                    <Card style={{ padding: 14 }}>
+                    <Card style={{ padding: 12 }}>
                       <Txt size={13} color={C.muted}>
                         Nenhuma variável global definida neste workspace.
                       </Txt>
@@ -270,124 +356,90 @@ export function ProfileScreen({
               </View>
             )}
 
-            {/* SECTION 2: SEGURANÇA (Multi-Tenancy, RLS, HMAC) */}
+            {/* Proteções do cliente e autorizações no serviço */}
             {activeSection === 'seguranca' && (
               <View style={{ gap: 12 }}>
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Icon name="shield-checkmark" size={18} color={C.success} />
-                    <Txt weight="700" size={15}>
-                      Row-Level Security (RLS) Ativo
+                {(
+                  [
+                    {
+                      title: 'Sessão renovável',
+                      icon: 'lock-closed-outline',
+                      text: 'Os tokens ficam no armazenamento protegido do dispositivo. No preview web, a sessão fica limitada a este separador.',
+                    },
+                    {
+                      title: 'Dados separados por conta',
+                      icon: 'person-circle-outline',
+                      text: 'Conversas, rascunhos e capturas ficam associados ao utilizador e ao espaço selecionado. Sair limpa os dados locais desta conta.',
+                    },
+                    {
+                      title: 'Autorizações no serviço',
+                      icon: 'shield-checkmark-outline',
+                      text: 'Os pedidos incluem a sessão e o workspace. O serviço verifica as permissões antes de executar ferramentas ou usar credenciais.',
+                    },
+                    {
+                      title: 'Downloads privados',
+                      icon: 'document-lock-outline',
+                      text: 'A app pede uma ligação assinada ao abrir um ficheiro e aceita apenas o Storage configurado. As ligações temporárias não são guardadas na cache.',
+                    },
+                  ] as const
+                ).map((item) => (
+                  <Card key={item.title} style={{ padding: 16, gap: 8 }}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        gap: 8,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Icon name={item.icon} size={19} />
+                      <Txt size={15} weight="600">
+                        {item.title}
+                      </Txt>
+                    </View>
+                    <Txt size={13} color={C.muted}>
+                      {item.text}
                     </Txt>
-                  </View>
-                  <Txt size={13} color={C.muted}>
-                    Todas as consultas no Supabase utilizam o token JWT do utilizador com isolamento estrito por workspace_id.
-                  </Txt>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Icon name="speedometer-outline" size={18} />
-                    <Txt weight="700" size={15}>
-                      Rate Limiting de Produção
-                    </Txt>
-                  </View>
-                  <Txt size={13} color={C.muted}>
-                    Proteção DDoS com limite de 60 requisições por minuto por IP e token de autenticação.
-                  </Txt>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Icon name="finger-print-outline" size={18} />
-                    <Txt weight="700" size={15}>
-                      Assinatura HMAC SHA-256
-                    </Txt>
-                  </View>
-                  <Txt size={13} color={C.muted}>
-                    Webhooks e chamadas externas são validadas criptograficamente contra falsificação.
-                  </Txt>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Icon name="globe-outline" size={18} />
-                    <Txt weight="700" size={15}>
-                      Filtro Anti-SSRF
-                    </Txt>
-                  </View>
-                  <Txt size={13} color={C.muted}>
-                    Bloqueio rigoroso de acessos a IPs privados, portas internas e metadados de cloud.
-                  </Txt>
-                </Card>
+                  </Card>
+                ))}
               </View>
             )}
-
             {/* SECTION 3: ENDPOINTS DE PRODUÇÃO */}
             {activeSection === 'endpoints' && (
               <View style={{ gap: 12 }}>
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <Txt weight="700" size={14}>
-                    Webhook Ingress URL
-                  </Txt>
-                  <Txt size={12} color={C.muted} numberOfLines={2}>
-                    https://cell-griot.pages.dev/api/webhooks/{currentWorkspace.id}
-                  </Txt>
-                  <Pressable
-                    onPress={() =>
-                      handleCopyEndpoint(
-                        'Webhook URL',
-                        `https://cell-griot.pages.dev/api/webhooks/${currentWorkspace.id}`
-                      )
-                    }
-                    style={styles.copyBtn}
-                  >
-                    <Icon name="copy-outline" size={15} />
-                    <Txt size={12} weight="600">
-                      Ver Endpoint Completo
+                {[
+                  ['Serviço CELL', apiBaseUrl],
+                  ['Autenticação e dados', supabaseUrl],
+                  ['Tarefas', apiBaseUrl + '/api/agents/runs'],
+                  [
+                    'Configuração do agente',
+                    apiBaseUrl + '/api/agents/profile',
+                  ],
+                  ['Controlo de tarefas', apiBaseUrl + '/api/agents/control'],
+                ].map(([label, url]) => (
+                  <Card key={label} style={{ padding: 16, gap: 8 }}>
+                    <Txt size={14} weight="600">
+                      {label}
                     </Txt>
-                  </Pressable>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <Txt weight="700" size={14}>
-                    Execução Síncrona do Grafo
-                  </Txt>
-                  <Txt size={12} color={C.muted} numberOfLines={2}>
-                    https://cell-griot.pages.dev/api/execute
-                  </Txt>
-                  <Pressable
-                    onPress={() =>
-                      handleCopyEndpoint('Execute URL', 'https://cell-griot.pages.dev/api/execute')
-                    }
-                    style={styles.copyBtn}
-                  >
-                    <Icon name="copy-outline" size={15} />
-                    <Txt size={12} weight="600">
-                      Ver Endpoint Completo
+                    <Txt size={12} color={C.muted}>
+                      {url}
                     </Txt>
-                  </Pressable>
-                </Card>
-
-                <Card style={{ padding: 16, gap: 6 }}>
-                  <Txt weight="700" size={14}>
-                    Execução de Agentes (Central Agent)
-                  </Txt>
-                  <Txt size={12} color={C.muted} numberOfLines={2}>
-                    https://cell-griot.pages.dev/api/agents/runs
-                  </Txt>
-                  <Pressable
-                    onPress={() =>
-                      handleCopyEndpoint('Agents URL', 'https://cell-griot.pages.dev/api/agents/runs')
-                    }
-                    style={styles.copyBtn}
-                  >
-                    <Icon name="copy-outline" size={15} />
-                    <Txt size={12} weight="600">
-                      Ver Endpoint Completo
-                    </Txt>
-                  </Pressable>
-                </Card>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => handleCopyEndpoint(label, url)}
+                      style={{
+                        minHeight: 44,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <Icon name="copy-outline" size={16} />
+                      <Txt size={12} weight="600">
+                        Copiar endereço
+                      </Txt>
+                    </Pressable>
+                  </Card>
+                ))}
               </View>
             )}
           </ScrollView>
@@ -401,7 +453,14 @@ export function ProfileScreen({
         presentationStyle="pageSheet"
         onRequestClose={() => setWorkspaceModal(false)}
       >
-        <View style={{ flex: 1, backgroundColor: C.white, padding: 24, paddingTop: 40 }}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: C.white,
+            padding: 20,
+            paddingTop: 28,
+          }}
+        >
           <View
             style={{
               flexDirection: 'row',
@@ -410,15 +469,19 @@ export function ProfileScreen({
               marginBottom: 20,
             }}
           >
-            <View>
-              <Txt size={24} weight="700">
+            <View style={{ flex: 1, gap: 2 }}>
+              <Txt size={22} weight="600">
                 Espaços de Trabalho
               </Txt>
               <Txt size={13} color={C.muted}>
                 Seleciona o espaço ativo da tua organização
               </Txt>
             </View>
-            <RoundButton icon="close" label="Fechar" onPress={() => setWorkspaceModal(false)} />
+            <RoundButton
+              icon="close"
+              label="Fechar"
+              onPress={() => setWorkspaceModal(false)}
+            />
           </View>
 
           <ScrollView style={{ flex: 1 }}>
@@ -443,20 +506,31 @@ export function ProfileScreen({
                 >
                   <Card
                     style={[
-                      { padding: 18, flexDirection: 'row', alignItems: 'center', gap: 14 },
+                      {
+                        padding: 12,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 14,
+                      },
                       isSelected && { borderColor: C.ink, borderWidth: 2 },
                     ]}
                   >
-                    <Icon name="cube-outline" size={24} color={isSelected ? C.ink : C.muted} />
+                    <Icon
+                      name="cube-outline"
+                      size={24}
+                      color={isSelected ? C.ink : C.muted}
+                    />
                     <View style={{ flex: 1, gap: 4 }}>
-                      <Txt weight="700" size={16}>
+                      <Txt weight="600" size={16}>
                         {ws.name}
                       </Txt>
                       <Txt size={12} color={C.muted}>
                         ID: {ws.id} · {ws.plan || 'Free'}
                       </Txt>
                     </View>
-                    {isSelected && <Icon name="checkmark-circle" color={C.ink} size={22} />}
+                    {isSelected && (
+                      <Icon name="checkmark-circle" color={C.ink} size={22} />
+                    )}
                   </Card>
                 </Pressable>
               );
@@ -470,9 +544,9 @@ export function ProfileScreen({
 
 const styles = StyleSheet.create({
   avatarCircle: {
-    height: 56,
-    width: 56,
-    borderRadius: 28,
+    height: 44,
+    width: 44,
+    borderRadius: 22,
     backgroundColor: C.ink,
     alignItems: 'center',
     justifyContent: 'center',
@@ -490,17 +564,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
-  },
-  copyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    backgroundColor: C.surface2,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginTop: 4,
   },
   logoutButton: {
     backgroundColor: C.ink,

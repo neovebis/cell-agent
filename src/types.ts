@@ -59,6 +59,7 @@ export interface Agent {
   workspaceId?: string;
   createdAt?: string;
   updatedAt?: string;
+  nodes?: AgentCell[];
 }
 
 export interface AgentMessage {
@@ -69,6 +70,9 @@ export interface AgentMessage {
   createdAt: string;
   status?: 'sending' | 'sent' | 'failed';
   attachments?: { name: string; mimeType: string }[];
+  runId?: string;
+  pendingId?: string;
+  error?: string;
 }
 
 export interface CaptureItem {
@@ -81,23 +85,8 @@ export interface CaptureItem {
   note?: string;
   base64?: string;
   synced?: boolean;
-}
-
-export interface Connection {
-  id: string;
-  name: string;
-  kind: 'Conectores' | 'Plugins' | 'MCP' | 'Skills' | 'Cells';
-  description: string;
-  connected: boolean;
-}
-
-export interface ActivityItem {
-  id: string;
-  title: string;
-  subtitle: string;
-  kind: 'complete' | 'approval' | 'failed' | 'running';
-  createdAt: string;
-  agentId?: string;
+  mimeType?: string;
+  size?: number;
 }
 
 export interface WorkspaceInfo {
@@ -130,44 +119,88 @@ export interface Session {
   email?: string;
   workspaceId?: string;
   userId?: string;
+  refreshToken?: string;
+  expiresAt?: number;
 }
 
-export interface Notice {
-  title: string;
+export interface CellCatalogEntry {
+  id: string;
+  canonicalType: string;
+  label: string;
+  category: string;
+  badge?: string;
+  accentColor?: string;
+  description: string;
+  icon: string;
+  aliases?: string[];
+  community?: boolean;
+  workspaceId?: string;
+}
+
+export interface AgentCell {
+  id: string;
+  type: string;
+  name: string;
+  credentialId?: string;
+  kind: 'Cells' | 'Skills' | 'Conectores';
+  provider?: string;
+}
+
+export type RunStatus =
+  | 'queued'
+  | 'running'
+  | 'paused'
+  | 'waiting_approval'
+  | 'success'
+  | 'failed'
+  | 'cancelled'
+  | 'expired';
+export type RunOperation = 'pause' | 'resume' | 'cancel' | 'approve';
+export interface AgentFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  sha256?: string;
+}
+export interface AgentRun {
+  id: string;
+  workflowId: string;
+  status: RunStatus;
   message: string;
-  type?: 'error' | 'success' | 'info';
+  answer?: string;
+  summary?: string;
+  createdAt: string;
+  updatedAt: string;
+  retryAt?: string;
+  modelCalls?: number;
+  maxModelCalls?: number;
+  toolCalls?: number;
+  maxToolCalls?: number;
+  approvalHash?: string;
+  approval?: { reason: string; action?: unknown } | null;
+  observations?: {
+    tool?: string;
+    success?: boolean;
+    error?: string;
+    result?: unknown;
+  }[];
+  events?: { event?: string; summary?: string; createdAt?: string }[];
+  files?: AgentFile[];
+  generatedFiles?: AgentFile[];
 }
 
-export interface CellGateway {
-  readonly demo: boolean;
-  signIn(email: string, password: string): Promise<Session>;
-  getAgents(session?: Session): Promise<Agent[]>;
-  createAgent(
-    name: string,
-    description: string,
-    session?: Session,
-    avatar?: AgentAvatarChoice
-  ): Promise<Agent>;
-  getAgentProfile(workflowId: string, session?: Session): Promise<AgentProfile | null>;
-  saveAgentProfile(workflowId: string, profile: Partial<AgentProfile>, session?: Session): Promise<void>;
-  getMessages(agentId: string, session?: Session): Promise<AgentMessage[]>;
-  sendMessage(
-    agentId: string,
-    content: string,
-    attachments?: FileAttachment[],
-    session?: Session
-  ): Promise<AgentMessage>;
-  clearMessages(agentId: string): Promise<void>;
-  getCaptures(session?: Session): Promise<CaptureItem[]>;
-  saveCapture(
-    item: Omit<CaptureItem, 'id' | 'createdAt' | 'synced'>,
-    session?: Session
-  ): Promise<CaptureItem>;
-  uploadCaptureFile(item: CaptureItem, session?: Session): Promise<string>;
-  getConnections(session?: Session): Promise<Connection[]>;
-  getActivity(session?: Session): Promise<ActivityItem[]>;
-  getWorkspaces(session?: Session): Promise<WorkspaceInfo[]>;
-  getCredentials(session?: Session): Promise<CredentialVaultItem[]>;
-  getVariables(session?: Session): Promise<GlobalVariableItem[]>;
-  registerPush(token: string, session?: Session): Promise<void>;
+export interface PendingMessage {
+  id: string;
+  workflowId: string;
+  content: string;
+  createdAt: string;
+  files: FileAttachment[];
+  runId?: string;
+  status: 'sending' | 'failed' | 'sent';
+  error?: string;
+}
+export interface AgentDraft {
+  text: string;
+  attachment: FileAttachment | null;
 }

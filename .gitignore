@@ -2,6 +2,7 @@ node_modules/
 .expo/
 dist/
 build/
+.validation*/
 android/
 ios/
 .env
@@ -10,3 +11,5 @@ ios/
 *.keystore
 .DS_Store
 Thumbs.db
+
+.codex-attachments/
