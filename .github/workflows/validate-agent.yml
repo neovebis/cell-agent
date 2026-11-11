@@ -60,5 +60,6 @@ jobs:
           name: cell-agent-preview
           path: |
             dist
+            build/test-web
             ${{ runner.temp }}/cell-agent-evidence
           if-no-files-found: ignore

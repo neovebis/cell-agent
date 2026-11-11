@@ -15,10 +15,11 @@ export function agentCellCatalog(
   profile: AgentProfile | null,
   custom: readonly CellCatalogEntry[],
 ) {
+  const agentNodes = agent.nodes || [];
   const definitions = new Map(
     [...paletteCells, ...custom].map((cell) => [cell.id, cell]),
   );
-  for (const node of agent.nodes) {
+  for (const node of agentNodes) {
     const known = cellDefinition(node.type);
     const customDefinition = custom.find(
       (cell) => cell.id === node.type || cell.aliases?.includes(node.type),
@@ -40,7 +41,7 @@ export function agentCellCatalog(
   const allowed = new Set(profile?.grants.executeNodes || []);
   return [...definitions.values()]
     .map((definition) => {
-      const nodes = agent.nodes.filter(
+      const nodes = agentNodes.filter(
         (node) =>
           node.type === definition.id ||
           definition.aliases?.includes(node.type) ||
