@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type SetStateAction,
@@ -29,6 +30,7 @@ import type {
   AgentProfile,
   AgentRun,
   CaptureItem,
+  CellCatalogEntry,
   CredentialVaultItem,
   FileAttachment,
   GlobalVariableItem,
@@ -42,12 +44,22 @@ function mergeRuns(previous: AgentRun[], incoming: AgentRun[]): AgentRun[] {
   const map = new Map(previous.map((run) => [run.id, run]));
   for (const run of incoming) {
     const old = map.get(run.id);
-    if (!old || !old.updatedAt || run.updatedAt >= old.updatedAt)
+    if (
+      !old ||
+      !old.updatedAt ||
+      run.updatedAt > old.updatedAt ||
+      (run.updatedAt === old.updatedAt &&
+        JSON.stringify(run) !== JSON.stringify(old))
+    )
       map.set(run.id, run);
   }
-  return [...map.values()]
+  const next = [...map.values()]
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     .slice(-100);
+  return next.length === previous.length &&
+    next.every((run, index) => run === previous[index])
+    ? previous
+    : next;
 }
 
 export function useAgentApp() {
@@ -68,8 +80,13 @@ export function useAgentApp() {
     runs: AgentRun[];
     pending: PendingMessage[];
   }>({ runs: [], pending: [] });
+  const advancing = useRef(new Map<string, AbortController>());
+  const [customCells, setCustomCells] = useState<CellCatalogEntry[]>([]);
+  const [catalogError, setCatalogError] = useState('');
   const transmissions = useRef(new Set<{ agentId: string; context: number }>());
   const transcriptRevision = useRef(0);
+  const latestRuns = useRef(runs);
+  latestRuns.current = runs;
   const [drafts, setDrafts] = useState<Record<string, AgentDraft>>({});
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
@@ -109,6 +126,8 @@ export function useAgentApp() {
     setTranscript({ runs: [], pending: [] });
     setDrafts({});
     setCredentials([]);
+    setCustomCells([]);
+    setCatalogError('');
     setVariables([]);
     setCaptures([]);
     setWorkspaces([]);
@@ -188,6 +207,23 @@ export function useAgentApp() {
     let cancelled = false;
     const context = epoch.current;
     const valid = () => !cancelled && epoch.current === context;
+    (async () => {
+      const cached = await gateway.getCachedCustomCells(auth);
+      if (valid()) setCustomCells(cached);
+      const fresh = await gateway.getCustomCells(auth);
+      if (valid()) {
+        setCustomCells(fresh);
+        setCatalogError('');
+      }
+    })().catch((error) => {
+      if (valid()) {
+        if (error instanceof SessionExpiredError) fail(error, context);
+        else
+          setCatalogError(
+            'Não foi possível atualizar os conectores da comunidade e do espaço.',
+          );
+      }
+    });
     (async () => {
       const [cached, primary] = await Promise.all([
         gateway.getCachedAgents(auth),
@@ -304,8 +340,7 @@ export function useAgentApp() {
     const poll = async () => {
       const observedRevision = transcriptRevision.current;
       try {
-        const fresh = await gateway.getRuns(agentId, auth, controller.signal),
-          outbox = await gateway.getPending(agentId, auth);
+        const fresh = await gateway.getRuns(agentId, auth, controller.signal);
         if (
           !controller.signal.aborted &&
           context === epoch.current &&
@@ -313,16 +348,26 @@ export function useAgentApp() {
           observedRevision === transcriptRevision.current &&
           !isTransmitting(agentId, context)
         ) {
-          setTranscript((value) => ({
-            runs: mergeRuns(value.runs, fresh),
-            pending: recoverUnconfirmedPending(outbox),
-          }));
+          setTranscript((value) => {
+            const next = mergeRuns(value.runs, fresh);
+            return next === value.runs ? value : { ...value, runs: next };
+          });
           setConnectionError('');
         }
       } catch (error) {
         if (!controller.signal.aborted) fail(error, context);
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(poll, 4000);
+        if (!controller.signal.aborted)
+          timer = setTimeout(
+            poll,
+            latestRuns.current.some(
+              (run) =>
+                run.workflowId === agentId &&
+                ['queued', 'running'].includes(run.status),
+            )
+              ? 900
+              : 5000,
+          );
       }
     };
     void poll();
@@ -419,16 +464,50 @@ export function useAgentApp() {
       [id]: { ...(previous[id] || { text: '' }), attachment },
     }));
   };
+  useEffect(
+    () => () => {
+      for (const controller of advancing.current.values()) controller.abort();
+      advancing.current.clear();
+    },
+    [agentId, scope, foreground],
+  );
   useEffect(() => {
     const auth = sessionRef.current;
-    if (!auth || !queuedId || !foreground) return;
+    if (
+      !auth ||
+      !queuedId ||
+      !agentId ||
+      !foreground ||
+      advancing.current.has(queuedId)
+    )
+      return;
     const controller = new AbortController(),
-      context = epoch.current;
-    gateway.advanceRun(queuedId, auth, controller.signal).catch((error) => {
-      if (!controller.signal.aborted) fail(error, context);
-    });
-    return () => controller.abort();
-  }, [queuedId, scope, foreground, fail]);
+      context = epoch.current,
+      selected = agentId;
+    advancing.current.set(queuedId, controller);
+    gateway
+      .advanceRun(queuedId, auth, controller.signal)
+      .then((run) => {
+        if (
+          !controller.signal.aborted &&
+          context === epoch.current &&
+          selected === agentIdRef.current &&
+          run.workflowId === selected
+        ) {
+          setTranscript((value) => ({
+            ...value,
+            runs: mergeRuns(value.runs, [run]),
+          }));
+        }
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) fail(error, context);
+      })
+      .finally(() => {
+        if (advancing.current.get(queuedId) === controller)
+          advancing.current.delete(queuedId);
+      });
+  }, [queuedId, agentId, scope, foreground, fail]);
 
   const login = async (email: string, password: string) => {
     if (!email.trim() || !password) {
@@ -655,17 +734,20 @@ export function useAgentApp() {
       fail(error, context);
     }
   };
-  const openFile = async (runId: string, fileId: string) => {
-    const auth = sessionRef.current;
-    if (!auth) return;
-    const context = epoch.current;
-    try {
-      const url = await gateway.getFileUrl(runId, fileId, auth);
-      if (context === epoch.current) await Linking.openURL(url);
-    } catch (error) {
-      fail(error, context);
-    }
-  };
+  const openFile = useCallback(
+    async (runId: string, fileId: string) => {
+      const auth = sessionRef.current;
+      if (!auth) return;
+      const context = epoch.current;
+      try {
+        const url = await gateway.getFileUrl(runId, fileId, auth);
+        if (context === epoch.current) await Linking.openURL(url);
+      } catch (error) {
+        fail(error, context);
+      }
+    },
+    [fail],
+  );
   const saveProfile = async (config: AgentConfig, grants: AgentGrants) => {
     const auth = sessionRef.current;
     if (!auth || !agentId || !profileKnown)
@@ -731,6 +813,14 @@ export function useAgentApp() {
       );
     }
   };
+  const visibleRuns = useMemo(
+    () => runs.filter((run) => run.workflowId === agentId),
+    [runs, agentId],
+  );
+  const messages = useMemo(
+    () => conversationMessages(agentId || '', runs, pending),
+    [agentId, runs, pending],
+  );
   return {
     loaded,
     session,
@@ -751,8 +841,10 @@ export function useAgentApp() {
     setShowAgents,
     profile,
     profileKnown,
-    runs: runs.filter((run) => run.workflowId === agentId),
-    messages: conversationMessages(agentId || '', runs, pending),
+    runs: visibleRuns,
+    messages,
+    customCells,
+    catalogError,
     captures,
     credentials,
     variables,

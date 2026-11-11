@@ -15,6 +15,7 @@ type Props = {
   busyId: string | null;
   onControl: (run: AgentRun, operation: RunOperation) => void;
   onFile: (runId: string, fileId: string) => void;
+  scoped?: boolean;
 };
 export function ActivityScreen({
   runs,
@@ -25,10 +26,12 @@ export function ActivityScreen({
   busyId,
   onControl,
   onFile,
+  scoped = false,
 }: Props) {
   const [filter, setFilter] = useState('Todas');
   const visible = [...runs]
     .reverse()
+    .filter((run) => run.workflowId === agent?.id)
     .filter(
       (run) =>
         filter === 'Todas' ||
@@ -43,7 +46,7 @@ export function ActivityScreen({
       contentContainerStyle={{
         padding: 20,
         paddingTop: 24,
-        paddingBottom: 104,
+        paddingBottom: scoped ? 24 : 104,
         gap: 14,
       }}
     >
@@ -54,7 +57,10 @@ export function ActivityScreen({
           justifyContent: 'space-between',
         }}
       >
-        <PageTitle kicker="Missões e resultados" title="Atividade" />
+        <PageTitle
+          kicker={scoped ? agent?.name : 'Missões e resultados'}
+          title={scoped ? 'Tarefas' : 'Atividade'}
+        />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Atualizar tarefas"
@@ -64,11 +70,13 @@ export function ActivityScreen({
           <Icon name="refresh-outline" />
         </Pressable>
       </View>
-      <AgentSelector
-        agents={agents}
-        selected={agent?.id}
-        onSelect={onSelectAgent}
-      />
+      {!scoped && (
+        <AgentSelector
+          agents={agents}
+          selected={agent?.id}
+          onSelect={onSelectAgent}
+        />
+      )}
       {!!agent && (
         <Txt weight="600" size={14}>
           Tarefas de {agent.name}

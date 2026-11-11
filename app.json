@@ -7,7 +7,7 @@
       "bundler": "metro",
       "output": "single"
     },
-    "version": "0.3.1",
+    "version": "0.3.2",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFFFFF",
@@ -25,7 +25,8 @@
     },
     "android": {
       "package": "com.cellsystem.agent.mobile",
-      "versionCode": 7,
+      "versionCode": 8,
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO"

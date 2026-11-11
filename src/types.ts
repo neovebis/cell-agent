@@ -123,12 +123,27 @@ export interface Session {
   expiresAt?: number;
 }
 
+export interface CellCatalogEntry {
+  id: string;
+  canonicalType: string;
+  label: string;
+  category: string;
+  badge?: string;
+  accentColor?: string;
+  description: string;
+  icon: string;
+  aliases?: string[];
+  community?: boolean;
+  workspaceId?: string;
+}
+
 export interface AgentCell {
   id: string;
   type: string;
   name: string;
   credentialId?: string;
   kind: 'Cells' | 'Skills' | 'Conectores';
+  provider?: string;
 }
 
 export type RunStatus =

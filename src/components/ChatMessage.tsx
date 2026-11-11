@@ -1,52 +1,61 @@
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  AccessibilityInfo,
-  Animated,
-  Pressable,
-  StyleSheet,
-  View,
-} from 'react-native';
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+  type SharedValue,
+} from 'react-native-reanimated';
 import * as Clipboard from 'expo-clipboard';
 import type { AgentMessage, AgentRun } from '../types';
 import { C } from '../theme';
 import { Icon, Txt } from './UI';
 
-export function ThinkingBubble({ agentName }: { agentName: string }) {
-  const dots = useRef([0, 1, 2].map(() => new Animated.Value(0.35))).current;
-  useEffect(() => {
-    let active = true;
-    const animations: Animated.CompositeAnimation[] = [];
-    void AccessibilityInfo.isReduceMotionEnabled()
-      .catch(() => false)
-      .then((reduced) => {
-        if (!active || reduced) return;
-        dots.forEach((value, index) => {
-          const animation = Animated.loop(
-            Animated.sequence([
-              Animated.delay(index * 140),
-              Animated.timing(value, {
-                toValue: 0.9,
-                duration: 380,
-                useNativeDriver: true,
-                isInteraction: false,
-              }),
-              Animated.timing(value, {
-                toValue: 0.35,
-                duration: 380,
-                useNativeDriver: true,
-                isInteraction: false,
-              }),
-            ]),
-          );
-          animations.push(animation);
-          animation.start();
-        });
-      });
-    return () => {
-      active = false;
-      animations.forEach((animation) => animation.stop());
+const NO_FILES: NonNullable<AgentRun['generatedFiles']> = [];
+
+function ThinkingDot({
+  phase,
+  index,
+  reduced,
+}: {
+  phase: SharedValue<number>;
+  index: number;
+  reduced: boolean;
+}) {
+  const motion = useAnimatedStyle(() => {
+    const wave = reduced ? 0.5 : (Math.sin(phase.value - index * 0.85) + 1) / 2;
+    return {
+      opacity: 0.35 + wave * 0.6,
+      transform: [
+        { translateY: reduced ? 0 : -3.5 * wave },
+        { scale: 0.82 + wave * 0.28 },
+      ],
     };
-  }, [dots]);
+  });
+  return <Animated.View testID="typing-dot" style={[styles.dot, motion]} />;
+}
+
+export const ThinkingBubble = memo(function ThinkingBubble({
+  agentName,
+}: {
+  agentName: string;
+}) {
+  const phase = useSharedValue(0);
+  const reduced = useReducedMotion();
+  useEffect(() => {
+    phase.value = reduced
+      ? 0
+      : withRepeat(
+          withTiming(Math.PI * 2, { duration: 1350, easing: Easing.linear }),
+          -1,
+          false,
+        );
+    return () => cancelAnimation(phase);
+  }, [phase, reduced]);
   return (
     <View
       testID="chat-typing"
@@ -54,26 +63,38 @@ export function ThinkingBubble({ agentName }: { agentName: string }) {
       accessibilityLabel={agentName + ' está a responder'}
       style={styles.typing}
     >
-      {dots.map((opacity, index) => (
-        <Animated.View key={index} style={[styles.dot, { opacity }]} />
+      {[0, 1, 2].map((index) => (
+        <ThinkingDot
+          key={index}
+          phase={phase}
+          index={index}
+          reduced={reduced}
+        />
       ))}
     </View>
   );
-}
+});
 
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   item,
-  files = [],
+  files = NO_FILES,
+  animate = true,
   onFile,
   onError,
 }: {
   item: AgentMessage;
   files?: AgentRun['generatedFiles'];
+  animate?: boolean;
   onFile: (runId: string, fileId: string) => void;
   onError: (message: string) => void;
 }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const offset = useRef(new Animated.Value(4)).current;
+  const reduced = useReducedMotion();
+  const opacity = useSharedValue(animate && !reduced ? 0 : 1);
+  const offset = useSharedValue(animate && !reduced ? 6 : 0);
+  const entrance = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateY: offset.value }],
+  }));
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -81,39 +102,18 @@ export function MessageBubble({
   const [copied, setCopied] = useState(false);
   const isUser = item.role === 'user';
   useEffect(() => {
-    let active = true;
-    let animation: Animated.CompositeAnimation | undefined;
-    void AccessibilityInfo.isReduceMotionEnabled()
-      .catch(() => false)
-      .then((reduced) => {
-        if (!active) return;
-        if (reduced) {
-          opacity.setValue(1);
-          offset.setValue(0);
-          return;
-        }
-        animation = Animated.parallel([
-          Animated.timing(opacity, {
-            toValue: 1,
-            duration: 160,
-            useNativeDriver: true,
-            isInteraction: false,
-          }),
-          Animated.timing(offset, {
-            toValue: 0,
-            duration: 160,
-            useNativeDriver: true,
-            isInteraction: false,
-          }),
-        ]);
-        animation.start();
-      });
-    return () => {
-      active = false;
-      animation?.stop();
-      clearTimeout(copyTimer.current);
+    const config = {
+      duration: reduced || !animate ? 0 : 240,
+      easing: Easing.out(Easing.cubic),
     };
-  }, [opacity, offset]);
+    opacity.value = withTiming(1, config);
+    offset.value = withTiming(0, config);
+    return () => {
+      cancelAnimation(opacity);
+      cancelAnimation(offset);
+    };
+  }, [animate, reduced, opacity, offset]);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
   const date = new Date(item.createdAt);
   const time = Number.isNaN(date.valueOf())
     ? ''
@@ -137,11 +137,8 @@ export function MessageBubble({
       testID={isUser ? 'user-message' : 'agent-message'}
       style={[
         styles.message,
-        {
-          alignItems: isUser ? 'flex-end' : 'flex-start',
-          opacity,
-          transform: [{ translateY: offset }],
-        },
+        { alignItems: isUser ? 'flex-end' : 'flex-start' },
+        entrance,
       ]}
     >
       {copyOpen && (
@@ -223,7 +220,7 @@ export function MessageBubble({
         ))}
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   message: { marginBottom: 18 },
@@ -235,7 +232,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     paddingVertical: 9,
   },
-  agentBody: { maxWidth: '100%', paddingVertical: 4 },
+  agentBody: {
+    backgroundColor: C.surface2,
+    borderRadius: 18,
+    borderBottomLeftRadius: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
   attachment: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   file: {
     flexDirection: 'row',
@@ -260,12 +263,17 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   typing: {
-    height: 28,
+    height: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 2,
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingTop: 3,
+    borderRadius: 18,
+    borderBottomLeftRadius: 6,
+    backgroundColor: C.surface2,
     marginBottom: 10,
   },
-  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: C.muted },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.ink },
 });

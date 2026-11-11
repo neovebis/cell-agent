@@ -14,6 +14,7 @@ import type {
   AgentProfile,
   AgentRun,
   CaptureItem,
+  CellCatalogEntry,
   CredentialVaultItem,
   FileAttachment,
   GlobalVariableItem,
@@ -459,13 +460,16 @@ export class CellClient {
     runId: string,
     session: Session,
     signal?: AbortSignal,
-  ): Promise<void> {
-    await this.api.request('/api/agents/tick', session, {
+  ): Promise<AgentRun> {
+    const result = await this.api.request('/api/agents/tick', session, {
       method: 'POST',
       body: { runId },
       signal,
       timeoutMs: 125000,
     });
+    if (result.run?.id !== runId || typeof result.run.workflowId !== 'string')
+      throw new ApiError('A execução não devolveu um resultado válido.', 502);
+    return result.run;
   }
   async getFileUrl(
     runId: string,
@@ -477,6 +481,65 @@ export class CellClient {
       session,
     );
     return trustedDownload(result.url, this.api.config.supabaseUrl);
+  }
+
+  async getCachedCustomCells(session: Session): Promise<CellCatalogEntry[]> {
+    return (
+      (await this.store.get<CellCatalogEntry[]>(
+        scopeKey(session) + 'catalog',
+      )) || []
+    );
+  }
+  async getCustomCells(session: Session): Promise<CellCatalogEntry[]> {
+    const key = scopeKey(session) + 'catalog';
+    const entries = new Map<string, CellCatalogEntry>();
+    for (let offset = 0; ; offset += 250) {
+      const filter = encodeURIComponent(
+        '(is_public.eq.true,workspace_id.eq.' + session.workspaceId + ')',
+      );
+      const rows = await this.api.request(
+        '/rest/v1/cells_custom_connectors?select=id,slug,name,description,category,icon,accent_color,badge,is_public,workspace_id&or=' +
+          filter +
+          '&order=id.asc&limit=250&offset=' +
+          offset,
+        this.authenticated(session),
+      );
+      if (!Array.isArray(rows))
+        throw new ApiError('O catálogo de conectores é inválido.', 502);
+      for (const row of rows) {
+        if (
+          typeof row.id !== 'string' ||
+          typeof row.name !== 'string' ||
+          !(row.is_public === true || row.workspace_id === session.workspaceId)
+        )
+          continue;
+        const iconName = String(row.icon || 'circle-dot')
+          .replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase())
+          .replace(/^-/, '');
+        entries.set(row.id, {
+          id: row.id,
+          canonicalType: 'custom_connector',
+          label: row.name,
+          description: String(row.description || 'Conector deste espaço.'),
+          category: 'execution',
+          icon: 'lucide:' + iconName,
+          accentColor: String(row.accent_color || '#777777'),
+          badge: String(row.badge || 'CC'),
+          aliases: typeof row.slug === 'string' ? ['custom_' + row.slug] : [],
+          community: row.is_public === true,
+          workspaceId: row.workspace_id,
+        });
+      }
+      if (rows.length < 250) break;
+      if (offset >= 10000)
+        throw new ApiError(
+          'O catálogo é demasiado grande para carregar de uma vez.',
+          413,
+        );
+    }
+    const values = [...entries.values()];
+    await this.store.set(key, values);
+    return values;
   }
 
   async getCredentials(session?: Session): Promise<CredentialVaultItem[]> {

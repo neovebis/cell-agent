@@ -1,9 +1,16 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { C } from '../theme';
 import { Icon, Txt } from './UI';
-
 export function ChatOptions({
   visible,
   agentName,
@@ -23,36 +30,71 @@ export function ChatOptions({
   onActivity: () => void;
   onPrimary: () => void;
 }) {
-  const insets = useSafeAreaInsets();
-  const pending = useRef<(() => void) | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const finish = () => {
+  const insets = useSafeAreaInsets(),
+    [presented, setPresented] = useState(visible);
+  const phase = useSharedValue(visible ? 1 : 0),
+    pending = useRef<(() => void) | null>(null),
+    timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const hide = useCallback(() => setPresented(false), []);
+  const finish = useCallback(() => {
     const action = pending.current;
     pending.current = null;
     action?.();
-  };
+  }, []);
   useEffect(() => {
-    if (visible) pending.current = null;
-  }, [visible]);
-  useEffect(() => () => clearTimeout(timer.current), []);
+    if (visible) {
+      pending.current = null;
+      setPresented(true);
+      phase.value = withTiming(1, {
+        duration: 150,
+        easing: Easing.out(Easing.cubic),
+      });
+    } else
+      phase.value = withTiming(
+        0,
+        { duration: 90, easing: Easing.in(Easing.quad) },
+        (done) => {
+          if (done) runOnJS(hide)();
+        },
+      );
+    return () => cancelAnimation(phase);
+  }, [visible, phase, hide]);
+  useEffect(() => {
+    if (!presented && Platform.OS !== 'ios')
+      timer.current = setTimeout(finish, 0);
+    return () => clearTimeout(timer.current);
+  }, [presented, finish]);
+  const backdrop = useAnimatedStyle(() => ({ opacity: phase.value }));
+  const entrance = useAnimatedStyle(() => ({
+    opacity: phase.value,
+    transform: [
+      { translateY: -6 * (1 - phase.value) },
+      { scale: 0.96 + phase.value * 0.04 },
+    ],
+  }));
   const select = (action: () => void) => {
     pending.current = action;
     onClose();
-    // iOS needs the first native modal to finish dismissing before opening settings.
-    if (Platform.OS !== 'ios') timer.current = setTimeout(finish, 0);
   };
   const items = [
     {
       label: 'Configurar modelo',
       icon: 'options-outline' as const,
       action: onModel,
+      disabled: false,
     },
     {
       label: 'Capacidades',
       icon: 'extension-puzzle-outline' as const,
       action: onTools,
+      disabled: false,
     },
-    { label: 'Tarefas', icon: 'list-outline' as const, action: onActivity },
+    {
+      label: 'Tarefas',
+      icon: 'list-outline' as const,
+      action: onActivity,
+      disabled: false,
+    },
     {
       label: isPrimary ? 'Agente principal' : 'Definir como principal',
       icon: 'checkmark-circle-outline' as const,
@@ -62,7 +104,7 @@ export function ChatOptions({
   ];
   return (
     <Modal
-      visible={visible}
+      visible={presented}
       transparent
       animationType="none"
       statusBarTranslucent
@@ -70,15 +112,19 @@ export function ChatOptions({
       onDismiss={finish}
     >
       <View style={styles.layer}>
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.backdrop, backdrop]}
+        />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Fechar opções"
           onPress={onClose}
-          style={styles.backdrop}
+          style={StyleSheet.absoluteFill}
         />
-        <View
+        <Animated.View
           testID="chat-options-menu"
-          style={[styles.sheet, { top: insets.top + 54 }]}
+          style={[styles.sheet, { top: insets.top + 64 }, entrance]}
         >
           <Txt
             size={12}
@@ -107,7 +153,7 @@ export function ChatOptions({
               </Txt>
             </Pressable>
           ))}
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );

@@ -11,9 +11,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { BottomNav } from './src/components/BottomNav';
 import { LiveMotion } from './src/components/LiveMotion';
 import { AgentSettings } from './src/components/AgentSettings';
+import { AgentPanel } from './src/components/AgentPanel';
 import { PageTitle, RoundButton, Txt } from './src/components/UI';
 import { ActivityScreen } from './src/screens/Activity';
 import { CaptureScreen } from './src/screens/Capture';
@@ -107,6 +109,10 @@ function Login({
 
 function Root() {
   const app = useAgentApp();
+  const [agentPanel, setAgentPanel] = useState<{
+    id: string;
+    kind: 'tasks' | 'tools';
+  } | null>(null);
   const [tab, setTab] = useState<Tab>('Chat');
   const [settingsOpen, setSettingsOpen] = useState(false),
     [settingsTab, setSettingsTab] = useState<'model' | 'tools'>('model');
@@ -116,14 +122,20 @@ function Root() {
   };
   useEffect(() => {
     setSettingsOpen(false);
+    setAgentPanel(null);
     setTab('Chat');
   }, [app.session?.userId, app.session?.workspaceId]);
+  useEffect(() => setAgentPanel(null), [app.activeAgent?.id]);
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       () => {
         if (settingsOpen) {
           setSettingsOpen(false);
+          return true;
+        }
+        if (agentPanel) {
+          setAgentPanel(null);
           return true;
         }
         if (tab !== 'Chat') {
@@ -138,7 +150,7 @@ function Root() {
       },
     );
     return () => subscription.remove();
-  }, [tab, settingsOpen, app.activeAgent?.id, app.showAgents]);
+  }, [tab, settingsOpen, agentPanel, app.activeAgent?.id, app.showAgents]);
   if (!app.loaded)
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -190,46 +202,59 @@ function Root() {
       ) : (
         <>
           {tab === 'Chat' && (
-            <ChatScreen
-              agents={app.agents}
-              activeAgent={app.showAgents ? null : app.activeAgent}
-              messages={app.messages}
-              busy={app.sending}
-              captures={app.captures}
-              draft={app.draft}
-              attachment={app.attachment}
-              onDraftChange={app.changeDraft}
-              onAttachmentChange={app.changeAttachment}
-              runs={app.runs}
-              primaryId={app.primaryId}
-              canSend={app.profileKnown && Boolean(app.profile)}
-              onOpen={app.openAgent}
-              onBack={() => {
-                Keyboard.dismiss();
-                app.setShowAgents(true);
-              }}
-              onNew={async (name, description, avatar) => {
-                await app.createAgent(name, description, avatar);
-                settings();
-              }}
-              onSend={async (content, attachment) => {
-                if (!app.profileKnown || !app.profile) {
+            <View
+              style={{ flex: 1 }}
+              accessibilityElementsHidden={Boolean(agentPanel)}
+              importantForAccessibility={
+                agentPanel ? 'no-hide-descendants' : 'auto'
+              }
+            >
+              <ChatScreen
+                agents={app.agents}
+                activeAgent={app.showAgents ? null : app.activeAgent}
+                messages={app.messages}
+                busy={app.sending}
+                obscured={Boolean(agentPanel)}
+                captures={app.captures}
+                draft={app.draft}
+                attachment={app.attachment}
+                onDraftChange={app.changeDraft}
+                onAttachmentChange={app.changeAttachment}
+                runs={app.runs}
+                primaryId={app.primaryId}
+                canSend={app.profileKnown && Boolean(app.profile)}
+                onOpen={app.openAgent}
+                onBack={() => {
+                  Keyboard.dismiss();
+                  app.setShowAgents(true);
+                }}
+                onNew={async (name, description, avatar) => {
+                  await app.createAgent(name, description, avatar);
                   settings();
-                  throw new Error('Configura o modelo antes de enviar.');
-                }
-                await app.send(content, attachment);
-              }}
-              onError={app.setNotice}
-              onSettings={() => settings()}
-              onTools={() => {
-                setTab('Conectores');
-              }}
-              onActivity={() => setTab('Atividade')}
-              onPrimary={app.makePrimary}
-              onRetry={app.retry}
-              onDiscard={app.discardPending}
-              onFile={app.openFile}
-            />
+                }}
+                onSend={async (content, attachment) => {
+                  if (!app.profileKnown || !app.profile) {
+                    settings();
+                    throw new Error('Configura o modelo antes de enviar.');
+                  }
+                  await app.send(content, attachment);
+                }}
+                onError={app.setNotice}
+                onSettings={() => settings()}
+                onTools={() => {
+                  if (app.activeAgent)
+                    setAgentPanel({ id: app.activeAgent.id, kind: 'tools' });
+                }}
+                onActivity={() => {
+                  if (app.activeAgent)
+                    setAgentPanel({ id: app.activeAgent.id, kind: 'tasks' });
+                }}
+                onPrimary={app.makePrimary}
+                onRetry={app.retry}
+                onDiscard={app.discardPending}
+                onFile={app.openFile}
+              />
+            </View>
           )}
           {tab === 'Capture' && (
             <CaptureScreen
@@ -250,6 +275,9 @@ function Root() {
               agents={app.agents}
               profile={app.profile}
               credentials={app.credentials}
+              customCells={app.customCells}
+              catalogError={app.catalogError}
+              onRefresh={app.refresh}
               onSelectAgent={app.openAgent}
               onConfigure={() => settings('tools')}
             />
@@ -291,6 +319,50 @@ function Root() {
                 setTab(next);
               }}
             />
+          )}
+          {!!agentPanel && app.activeAgent?.id === agentPanel.id && (
+            <AgentPanel
+              agent={app.activeAgent}
+              kind={agentPanel.kind}
+              onClose={() => setAgentPanel(null)}
+            >
+              {agentPanel.kind === 'tasks' ? (
+                <ActivityScreen
+                  scoped
+                  runs={app.runs}
+                  agent={app.activeAgent}
+                  agents={[]}
+                  onSelectAgent={app.openAgent}
+                  onRefresh={app.refresh}
+                  busyId={app.controlBusy}
+                  onControl={app.control}
+                  onFile={app.openFile}
+                />
+              ) : (
+                <ConnectorsScreen
+                  scoped
+                  agent={app.activeAgent}
+                  agents={[]}
+                  profile={app.profile}
+                  credentials={app.credentials}
+                  customCells={app.customCells}
+                  catalogError={app.catalogError}
+                  onRefresh={app.refresh}
+                  onSelectAgent={app.openAgent}
+                  onConfigure={() => settings('tools')}
+                  onRequestCell={(cell) => {
+                    app.changeDraft(
+                      (value) =>
+                        (value ? value + '\n' : '') +
+                        'Adiciona o Cell ' +
+                        cell.label +
+                        ' a este agente e explica a configuração necessária.',
+                    );
+                    setAgentPanel(null);
+                  }}
+                />
+              )}
+            </AgentPanel>
           )}
           {!!app.activeAgent && app.profileKnown && (
             <AgentSettings
@@ -337,10 +409,12 @@ function Root() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={{ flex: 1, backgroundColor: C.white }}>
-        <StatusBar barStyle="dark-content" backgroundColor={C.white} />
-        <Root />
-      </SafeAreaView>
+      <KeyboardProvider>
+        <SafeAreaView style={{ flex: 1, backgroundColor: C.white }}>
+          <StatusBar barStyle="dark-content" backgroundColor={C.white} />
+          <Root />
+        </SafeAreaView>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }

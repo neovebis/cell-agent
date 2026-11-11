@@ -133,6 +133,10 @@ export function workflowAgent(row: Record<string, any>): Agent {
       id: node.id,
       type: node.type,
       name: node.title || CELL_NAMES[node.type] || node.type,
+      provider:
+        typeof node.config?.provider === 'string'
+          ? node.config.provider
+          : undefined,
       credentialId:
         typeof node.config?.credentialId === 'string'
           ? node.config.credentialId

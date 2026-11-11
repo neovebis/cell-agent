@@ -186,6 +186,38 @@ try {
         return reply([
           { id: 'space-one', name: 'Espaço de teste', tier: 'free' },
         ]);
+      if (url.pathname === '/rest/v1/cells_custom_connectors')
+        return reply([
+          {
+            id: 'community-one',
+            slug: 'community-one',
+            name: 'Conector da comunidade',
+            description: 'Consulta pública de teste.',
+            category: 'execution',
+            icon: 'Plug',
+            is_public: true,
+            workspace_id: 'other-space',
+          },
+          {
+            id: 'private-one',
+            slug: 'private-one',
+            name: 'Conector privado do espaço',
+            description: 'Privado neste espaço.',
+            category: 'execution',
+            icon: 'Mail',
+            is_public: false,
+            workspace_id: 'space-one',
+          },
+          {
+            id: 'private-other',
+            slug: 'other',
+            name: 'Privado de outro espaço',
+            description: 'Não mostrar.',
+            icon: 'Plug',
+            is_public: false,
+            workspace_id: 'other-space',
+          },
+        ]);
       if (url.pathname === '/rest/v1/cells_workflows')
         return reply([
           workflow,
@@ -401,11 +433,38 @@ try {
     );
     assert.equal(await header.getByText('Tarefas', { exact: true }).count(), 0);
     assert.ok(!(await composeBar.innerText()).includes('Agente principal'));
+    const identityPill = page.getByRole('button', {
+      name: 'Opções de Agente principal',
+      exact: true,
+    });
+    const identityBox = await identityPill.boundingBox();
+    assert.ok(identityBox.height >= 48 && identityBox.height <= 50);
+    assert.ok(identityBox.width <= 190, 'Identity keeps its compact width');
     assert.ok((await header.boundingBox()).height <= 64);
     assert.ok((await composeBar.boundingBox()).height <= 64);
     await page.screenshot({
       path: join(evidence, viewport.name + '-empty.png'),
     });
+    await composer.fill('Texto visível com teclado');
+    await composer.focus();
+    await page.setViewportSize({
+      width: viewport.width,
+      height: Math.max(380, viewport.height - 300),
+    });
+    const resizedComposer = await composeBar.boundingBox();
+    assert.ok(
+      resizedComposer.y + resizedComposer.height <=
+        Math.max(380, viewport.height - 300) + 1,
+    );
+    assert.equal(await composer.inputValue(), 'Texto visível com teclado');
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-keyboard-sized.png'),
+    });
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
+    await composer.fill('');
     await back.click();
     await page.getByText('Agentes', { exact: true }).waitFor();
     assert.equal(
@@ -432,11 +491,65 @@ try {
     await page.screenshot({
       path: join(evidence, viewport.name + '-agents.png'),
     });
+    await page
+      .getByRole('button', { name: 'Abrir chat de Griotinho', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Opções do agente', exact: true })
+      .click();
+    await page.getByRole('button', { name: 'Tarefas', exact: true }).click();
+    const personalTasks = page.getByTestId('agent-task-panel');
+    await personalTasks
+      .getByText('Tarefas de Griotinho', { exact: true })
+      .waitFor();
+    assert.equal(
+      await personalTasks
+        .getByRole('button', { name: 'Agente principal', exact: true })
+        .count(),
+      0,
+    );
+    await page
+      .getByRole('button', { name: 'Voltar à conversa', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Opções do agente', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Capacidades', exact: true })
+      .click();
+    const secondCatalog = page.getByTestId('agent-capability-panel');
+    await secondCatalog.getByTestId('catalog-artcraft_pdf').waitFor();
+    assert.ok(
+      await secondCatalog
+        .getByTestId('catalog-artcraft_pdf')
+        .getByText('Por adicionar a este agente', { exact: true })
+        .isVisible(),
+    );
+    await secondCatalog
+      .getByLabel('Pesquisar capacidades', { exact: true })
+      .fill('CAD');
+    await secondCatalog
+      .getByRole('button', { name: 'Detalhes de Desenho técnico', exact: true })
+      .click();
+    await secondCatalog
+      .getByRole('button', {
+        name: 'Pedir Desenho técnico ao agente',
+        exact: true,
+      })
+      .click();
+    await composer.waitFor();
+    assert.match(await composer.inputValue(), /Desenho técnico/);
+    await back.click();
     await openChat.click();
+    assert.equal(await composer.inputValue(), '');
     await options.click();
     await page.getByTestId('chat-options-menu').waitFor();
     await page.getByRole('button', { name: 'Tarefas', exact: true }).click();
-    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await page.getByTestId('agent-task-panel').waitFor();
+    assert.equal(await page.getByRole('tab').count(), 0);
+    await page
+      .getByRole('button', { name: 'Voltar à conversa', exact: true })
+      .click();
     await page
       .getByRole('button', { name: 'Opções de Agente principal', exact: true })
       .click();
@@ -516,6 +629,23 @@ try {
     for (let attempt = 0; attempt < 100 && !tickRequested; attempt++)
       await new Promise((resolve) => setTimeout(resolve, 100));
     assert.ok(tickRequested);
+    const dotSamples = [];
+    for (let sample = 0; sample < 8; sample++) {
+      dotSamples.push(
+        await page.getByTestId('typing-dot').evaluateAll((dots) =>
+          dots.map((dot) => ({
+            opacity: getComputedStyle(dot).opacity,
+            transform: getComputedStyle(dot).transform,
+          })),
+        ),
+      );
+      await page.waitForTimeout(60);
+    }
+    assert.equal(dotSamples[0].length, 3);
+    assert.ok(
+      new Set(dotSamples.map(JSON.stringify)).size >= 4,
+      'Typing wave must move continuously',
+    );
     assert.equal(
       await page.getByTestId('user-message').getAttribute('id'),
       optimisticId,
@@ -526,16 +656,23 @@ try {
     await page.screenshot({
       path: join(evidence, viewport.name + '-working.png'),
     });
+    const completedTickAt = Date.now();
     releaseTick();
     await page
       .getByRole('button', { name: 'Rever autorização', exact: true })
       .click();
     await page.getByText('Operação a autorizar', { exact: true }).waitFor();
+    assert.ok(
+      Date.now() - completedTickAt < 3000,
+      'A completed tick should be reflected without the previous four-second wait',
+    );
     await page
       .getByRole('button', { name: 'Aprovar operação', exact: true })
       .click();
     await page.getByText('Concluída', { exact: true }).waitFor();
-    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Voltar à conversa', exact: true })
+      .click();
     await waitForPainted(
       page.getByText('Documento preparado.', { exact: true }),
     );
@@ -563,8 +700,43 @@ try {
     await page
       .getByRole('button', { name: 'Capacidades', exact: true })
       .click();
+    await page.getByTestId('agent-capability-panel').waitFor();
+    const pdfCell = page.getByTestId('catalog-artcraft_pdf');
+    await pdfCell.waitFor();
+    await pdfCell
+      .getByRole('button', { name: 'Detalhes de PDF', exact: true })
+      .click();
     await page.getByText('PDF de trabalho', { exact: true }).waitFor();
-    await page.getByRole('button', { name: 'Configurar', exact: true }).click();
+    assert.equal(await pdfCell.getByTestId('cell-icon').count(), 1);
+    assert.equal(await page.getByRole('tab').count(), 0);
+    const catalogSearch = page.getByLabel('Pesquisar capacidades', {
+      exact: true,
+    });
+    await catalogSearch.fill('CAD');
+    await page.getByTestId('catalog-artcraft_cadcraft').waitFor();
+    assert.equal(
+      await page
+        .getByTestId('catalog-artcraft_cadcraft')
+        .getByTestId('cell-icon')
+        .count(),
+      1,
+    );
+    await catalogSearch.fill('Conector');
+    await page.getByText('Conector da comunidade', { exact: true }).waitFor();
+    await page
+      .getByText('Conector privado do espaço', { exact: true })
+      .waitFor();
+    assert.equal(
+      await page.getByText('Privado de outro espaço', { exact: true }).count(),
+      0,
+    );
+    await catalogSearch.fill('');
+    await page
+      .getByRole('button', {
+        name: 'Configurar capacidades de Agente principal',
+        exact: true,
+      })
+      .click();
     const cellSwitch = page.getByRole('switch', {
       name: 'Autorizar PDF de trabalho',
       exact: true,
@@ -589,7 +761,12 @@ try {
     await page.screenshot({
       path: join(evidence, viewport.name + '-capabilities.png'),
     });
-    await page.getByRole('button', { name: 'Configurar', exact: true }).click();
+    await page
+      .getByRole('button', {
+        name: 'Configurar capacidades de Agente principal',
+        exact: true,
+      })
+      .click();
     await page.getByText('Modelo', { exact: true }).click();
     const modelsButton = page.getByRole('button', {
       name: 'Consultar modelos disponíveis ↗',
@@ -620,6 +797,10 @@ try {
     await page
       .getByRole('button', { name: 'Fechar configurações', exact: true })
       .click();
+    await page
+      .getByRole('button', { name: 'Voltar à conversa', exact: true })
+      .click();
+    await back.click();
     await page.getByRole('tab', { name: 'Perfil', exact: true }).click();
     await page.getByText('Avançado', { exact: true }).click();
     for (const label of ['Cofre & Vars', 'Segurança', 'Endpoints']) {
@@ -647,6 +828,7 @@ try {
       .waitFor();
     await page.getByRole('button', { name: 'Fechar', exact: true }).click();
     await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    await openChat.click();
     await composer.waitFor();
     assert.equal(await composer.inputValue(), 'Rascunho preservado');
     await page
@@ -665,6 +847,18 @@ try {
     await waitForPainted(page.getByText(friendlyAnswer, { exact: true }));
     assert.equal(await page.getByText('Na fila', { exact: true }).count(), 0);
     assert.equal(await page.getByText(/ferramentas usadas/).count(), 0);
+    assert.ok(
+      await page
+        .getByTestId('agent-message')
+        .last()
+        .evaluate((node) =>
+          [...node.children].some(
+            (child) =>
+              getComputedStyle(child).backgroundColor === 'rgb(242, 242, 242)',
+          ),
+        ),
+      'Assistant text must remain inside its light bubble',
+    );
     await page.screenshot({
       path: join(evidence, viewport.name + '-chat.png'),
     });
@@ -716,6 +910,11 @@ try {
       configuredEndpoints: true,
       delayedConfirmationStable: true,
       compactChat: true,
+      agentScopedPanels: true,
+      completeCatalogWithIcons: true,
+      keyboardSizedViewport: true,
+      smoothTypingMotion: true,
+      assistantBubbleRestored: true,
       hiddenHeaderActions: true,
       noOperationalCardsInChat: true,
       approvalStillExplicit: true,

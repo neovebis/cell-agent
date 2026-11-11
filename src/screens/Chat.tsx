@@ -4,7 +4,6 @@ import {
   Animated,
   FlatList,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -13,6 +12,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { MessageBubble, ThinkingBubble } from '../components/ChatMessage';
@@ -44,6 +45,7 @@ type Props = {
   activeAgent: Agent | null;
   messages: AgentMessage[];
   busy: boolean;
+  obscured?: boolean;
   captures?: CaptureItem[];
   draft: string;
   attachment: FileAttachment | null;
@@ -70,7 +72,9 @@ type Props = {
   onFile: (runId: string, fileId: string) => Promise<void>;
 };
 
+const NO_GENERATED_FILES: NonNullable<AgentRun['generatedFiles']> = [];
 export function ChatScreen(props: Props) {
+  const insets = useSafeAreaInsets();
   const [creationOpen, setCreationOpen] = useState(false);
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentName, setAgentName] = useState('');
@@ -114,13 +118,6 @@ export function ChatScreen(props: Props) {
     menuAnim.setValue(0);
   }, [props.activeAgent?.id]);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (followLatest.current)
-        listRef.current?.scrollToEnd({ animated: true });
-    }, 60);
-    return () => clearTimeout(timer);
-  }, [props.messages.length, replying, attention?.id]);
   useEffect(() => {
     if (!draft) setInputHeight(40);
   }, [draft]);
@@ -603,7 +600,8 @@ export function ChatScreen(props: Props) {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: C.white }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
+      keyboardVerticalOffset={insets.top}
     >
       <View testID="chat-header" style={styles.header}>
         <Pressable
@@ -629,6 +627,7 @@ export function ChatScreen(props: Props) {
           >
             <LiveMotion
               size={22}
+              active={!props.obscured}
               shape={agent.avatar?.shape ?? 'circle'}
               colorId={agent.avatar?.color ?? 'black'}
             />
@@ -687,17 +686,18 @@ export function ChatScreen(props: Props) {
         scrollEventThrottle={100}
         onContentSizeChange={() => {
           if (followLatest.current)
-            listRef.current?.scrollToEnd({ animated: false });
+            listRef.current?.scrollToEnd({ animated: true });
         }}
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <View>
             <MessageBubble
               item={item}
+              animate={index >= props.messages.length - 2}
               files={
                 props.runs.find((run) => run.id === item.runId)
-                  ?.generatedFiles || []
+                  ?.generatedFiles || NO_GENERATED_FILES
               }
-              onFile={(runId, fileId) => void props.onFile(runId, fileId)}
+              onFile={props.onFile}
               onError={props.onError}
             />
             {item.pendingId && item.status === 'failed' && (
@@ -1170,7 +1170,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   agentChip: {
-    minHeight: 38,
+    minHeight: 48,
     maxWidth: '100%',
     borderRadius: 999,
     borderWidth: 1,
@@ -1180,7 +1180,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 7,
     paddingHorizontal: 11,
-    paddingVertical: 5,
+    paddingVertical: 10,
   },
   floatingMenuCard: {
     backgroundColor: C.white,

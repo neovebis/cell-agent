@@ -634,3 +634,71 @@ test('a conversa não mostra mensagens de outro workflow durante a mudança de a
     [],
   );
 });
+
+test('a execução devolve a resposta final sem aguardar outra consulta de histórico', async () => {
+  const expected = run({ status: 'success', answer: 'Resposta imediata' });
+  const client = new CellClient(
+    new CellApi(config, async (url, init) => {
+      assert.equal(url, config.apiUrl + '/api/agents/tick');
+      assert.equal(init.method, 'POST');
+      return response({ run: expected }, 202);
+    }),
+    memoryStore(),
+  );
+  assert.deepEqual(await client.advanceRun(expected.id, session()), expected);
+});
+test('o catálogo consulta só metadados e exclui conectores privados de outro espaço', async () => {
+  const store = memoryStore(),
+    auth = session();
+  let requests = 0;
+  const client = new CellClient(
+    new CellApi(config, async (url, init) => {
+      requests++;
+      const parsed = new URL(url);
+      assert.equal(
+        parsed.searchParams.get('or'),
+        '(is_public.eq.true,workspace_id.eq.space-one)',
+      );
+      assert.ok(
+        !/http_config|script_config|config_fields/.test(
+          parsed.searchParams.get('select'),
+        ),
+      );
+      assert.equal(init.headers.Authorization, 'Bearer access-test');
+      return response([
+        {
+          id: 'public',
+          name: 'Público',
+          is_public: true,
+          workspace_id: 'other',
+        },
+        {
+          id: 'private',
+          slug: 'mine',
+          name: 'Meu',
+          is_public: false,
+          workspace_id: 'space-one',
+        },
+        {
+          id: 'foreign',
+          name: 'Outro',
+          is_public: false,
+          workspace_id: 'space-two',
+        },
+      ]);
+    }),
+    store,
+  );
+  const cells = await client.getCustomCells(auth);
+  assert.equal(requests, 1);
+  assert.deepEqual(
+    cells.map((cell) => cell.id),
+    ['public', 'private'],
+  );
+  assert.deepEqual(cells[1].aliases, ['custom_mine']);
+  assert.equal(
+    (await client.getCachedCustomCells(session({ workspaceId: 'space-two' })))
+      .length,
+    0,
+  );
+});
