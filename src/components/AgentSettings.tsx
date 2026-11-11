@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -45,7 +45,7 @@ type Props = {
   ) => Promise<{ id: string; name: string }[]>;
   onError: (message: string) => void;
 };
-export function AgentSettings({
+export const AgentSettings = memo(function AgentSettings({
   visible,
   agent,
   profile,
@@ -552,7 +552,7 @@ export function AgentSettings({
       </View>
     </Modal>
   );
-}
+});
 const field = {
   borderWidth: 1,
   borderColor: C.border,

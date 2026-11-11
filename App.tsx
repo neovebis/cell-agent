@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -116,6 +116,7 @@ function Root() {
   const [tab, setTab] = useState<Tab>('Chat');
   const [settingsOpen, setSettingsOpen] = useState(false),
     [settingsTab, setSettingsTab] = useState<'model' | 'tools'>('model');
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
   const settings = (initial: 'model' | 'tools' = 'model') => {
     setSettingsTab(initial);
     setSettingsOpen(true);
@@ -373,7 +374,7 @@ function Root() {
               profile={app.profile}
               credentials={app.credentials}
               variables={app.variables}
-              onClose={() => setSettingsOpen(false)}
+              onClose={closeSettings}
               onSave={app.saveProfile}
               onModels={app.getModels}
               onError={app.setNotice}

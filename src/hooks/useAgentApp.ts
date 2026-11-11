@@ -748,7 +748,7 @@ export function useAgentApp() {
     },
     [fail],
   );
-  const saveProfile = async (config: AgentConfig, grants: AgentGrants) => {
+  const saveProfile = useCallback(async (config: AgentConfig, grants: AgentGrants) => {
     const auth = sessionRef.current;
     if (!auth || !agentId || !profileKnown)
       throw new Error('Atualiza a configuração antes de guardar.');
@@ -761,7 +761,11 @@ export function useAgentApp() {
     const fresh = await gateway.getAgentProfile(agentId, auth);
     if (context === epoch.current && agentId === agentIdRef.current)
       setProfile(fresh);
-  };
+  }, [agentId, profileKnown, profile?.revision]);
+  const getModels = useCallback((credentialId: string, provider: string) => {
+    if (!sessionRef.current) throw new Error('Sessão necessária.');
+    return gateway.getModels(credentialId, provider, sessionRef.current);
+  }, []);
   const saveCapture = async (
     draft: Omit<CaptureItem, 'id' | 'createdAt' | 'synced'>,
   ) => {
@@ -864,9 +868,6 @@ export function useAgentApp() {
     sendCapture,
     createAgent,
     refresh: () => setRevision((value) => value + 1),
-    getModels: (credentialId: string, provider: string) => {
-      if (!sessionRef.current) throw new Error('Sessão necessária.');
-      return gateway.getModels(credentialId, provider, sessionRef.current);
-    },
+    getModels,
   };
 }
