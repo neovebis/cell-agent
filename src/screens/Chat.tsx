@@ -605,14 +605,14 @@ export function ChatScreen(props: Props) {
       behavior="padding"
       keyboardVerticalOffset={insets.top}
     >
-      <View testID="chat-header" style={styles.header}>
+      <View testID="chat-header" pointerEvents="box-none" style={styles.header}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Voltar aos agentes"
           onPress={props.onBack}
           style={styles.headerTouch}
         />
-        <View style={styles.headerCenter}>
+        <View pointerEvents="box-none" style={styles.headerCenter}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={'Opções de ' + agent.name}
@@ -667,11 +667,12 @@ export function ChatScreen(props: Props) {
 
       {/* Messages List */}
       <FlatList
+        testID="chat-messages"
         ref={listRef}
         style={{ flex: 1 }}
         contentContainerStyle={{
           paddingHorizontal: 18,
-          paddingTop: 10,
+          paddingTop: 68,
           paddingBottom: 16,
           flexGrow: 1,
         }}
@@ -965,7 +966,10 @@ export function ChatScreen(props: Props) {
         </Animated.View>
         <TextInput
           value={draft}
-          onChangeText={text => { latestDraft.current = text; setDraft(text); }}
+          onChangeText={(text) => {
+            latestDraft.current = text;
+            setDraft(text);
+          }}
           multiline
           placeholder="Mensagem…"
           placeholderTextColor={C.muted}
@@ -975,7 +979,12 @@ export function ChatScreen(props: Props) {
             setInputHeight(
               Math.max(
                 40,
-                latestDraft.current ? Math.min(116, Math.ceil(event.nativeEvent.contentSize.height)) : 40,
+                latestDraft.current
+                  ? Math.min(
+                      116,
+                      Math.ceil(event.nativeEvent.contentSize.height),
+                    )
+                  : 40,
               ),
             )
           }
@@ -1130,6 +1139,12 @@ const styles = StyleSheet.create({
     backgroundColor: C.white,
   },
   header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    backgroundColor: 'transparent',
     minHeight: 54,
     paddingHorizontal: 8,
     paddingVertical: 5,

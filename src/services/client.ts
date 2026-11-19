@@ -1,5 +1,10 @@
 import { CellApi, ApiError, SessionExpiredError } from './api.ts';
 import {
+  centralAgentConfig,
+  centralAgentGrants,
+  centralAgentPayload,
+} from './agentProfile.ts';
+import {
   newMessageId,
   scopeKey,
   trustedDownload,
@@ -193,19 +198,8 @@ export class CellClient {
     const { grants, ...config } = body.profile;
     return {
       workflowId,
-      config,
-      grants: {
-        ...grants,
-        editGraph: Boolean(grants?.editGraph),
-        executeCode: Boolean(grants?.executeCode),
-        webSearch: Boolean(grants?.webSearch),
-        teams: Boolean(grants?.teams),
-        externalEffects: Boolean(grants?.externalEffects),
-        verificationRequired: Boolean(grants?.verificationRequired),
-        executeNodes: grants?.executeNodes || [],
-        credentialIds: grants?.credentialIds || [],
-        variableNames: grants?.variableNames || [],
-      },
+      config: centralAgentConfig(config),
+      grants: centralAgentGrants(grants),
       revision: body.revision,
     };
   }
@@ -227,7 +221,7 @@ export class CellClient {
       method: 'POST',
       body: {
         workflowId,
-        profile: { ...profile.config, grants: profile.grants },
+        profile: centralAgentPayload(profile.config, profile.grants),
       },
     });
   }
@@ -498,11 +492,12 @@ export class CellClient {
         '(is_public.eq.true,workspace_id.eq.' + session.workspaceId + ')',
       );
       const rows = await this.api.request(
-        '/rest/v1/cells_custom_connectors?select=id,slug,name,description,category,icon,accent_color,badge,is_public,workspace_id&or=' +
+        '/cells_custom_connectors?select=id,slug,name,description,category,icon,accent_color,badge,is_public,workspace_id&or=' +
           filter +
           '&order=id.asc&limit=250&offset=' +
           offset,
         this.authenticated(session),
+        { rest: true },
       );
       if (!Array.isArray(rows))
         throw new ApiError('O catálogo de conectores é inválido.', 502);

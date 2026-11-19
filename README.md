@@ -1,4 +1,4 @@
-# CELL AGENT Mobile · v0.3.2
+# CELL AGENT Mobile · v0.3.3
 
 Cliente React Native + Expo do CELL SYSTEM. Esta versão altera apenas a app móvel. Usa os contratos já existentes de Supabase Auth/REST e da API Cell Griot; não contém backend, migrações, alterações ao site ou deploys desses serviços.
 
@@ -15,7 +15,7 @@ Cliente React Native + Expo do CELL SYSTEM. Esta versão altera apenas a app mó
 
 As opções de Tarefas e Capacidades abrem painéis pessoais do agente atual, sem mudar a aba global. O teclado é gerido pelo controlador nativo compatível com o SDK 54, para manter o campo de mensagem visível em Android e iOS.
 
-## Sessão e dados locais
+A v0.3.3 corrige a gravação de perfis ainda não configurados: o cliente envia só os campos suportados pelo agente central, sem alterar permissões por omissão. Retira a faixa branca do chat, mantendo a cápsula flutuante, e encaminha os conectores para a API de dados existente, com a sessão e a chave publicável.\n\n## Sessão e dados locais
 
 A sessão inclui renovação de tokens e coordena renovações concorrentes. Em Android/iOS os tokens ficam no SecureStore; no preview web ficam em sessionStorage. A cache usa SQLite no dispositivo e IndexedDB no preview, com chaves separadas por utilizador, workspace e agente.
 
@@ -51,6 +51,6 @@ A workflow Validate CELL AGENT instala e verifica apenas este repositório, expo
 
 O build UI isolado usa as variáveis de teste e a pasta build/test-web. O bundle de produto usa a configuração normal e fica separado. Evidência e screenshots ficam nos artefactos temporários da execução, não na fonte. Estes testes verificam o cliente e os contratos; não certificam o funcionamento dos executores de produção nem substituem o ensaio num dispositivo Android/iOS.
 
-A v0.3.2 mantém a chave e o armazenamento das versões 0.3.0 e 0.3.1. O código Android aumenta para 8, permitindo atualização sem desinstalar.
+A v0.3.3 mantém a chave e o armazenamento das versões 0.3.0, 0.3.1 e 0.3.2. O código Android aumenta para 9, permitindo atualização sem desinstalar.
 
 A workflow de APK continua separada e produz um APK release assinado, checksum, manifesto e metadados de assinatura nos artefactos, sem publicar releases automaticamente. Exige os GitHub Secrets KEYSTORE_BASE64, KEYSTORE_ALIAS, KEYSTORE_PASSWORD e KEY_PASSWORD; nunca gera uma chave de substituição durante o build. Compara o certificado com o APK v0.2.2 e regista se permite atualização direta. Produzir um APK de atualização exige a chave de assinatura correspondente à versão instalada.

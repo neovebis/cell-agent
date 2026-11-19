@@ -23,6 +23,7 @@ import { ChatScreen } from './src/screens/Chat';
 import { ConnectorsScreen } from './src/screens/Connectors';
 import { ProfileScreen } from './src/screens/Profile';
 import { useAgentApp } from './src/hooks/useAgentApp';
+import { agentProfileReady } from './src/services/agentProfile';
 import { C } from './src/theme';
 import type { Tab } from './src/types';
 
@@ -201,7 +202,7 @@ function Root() {
       {!app.session ? (
         <Login busy={app.loginBusy} onSubmit={app.login} />
       ) : (
-        <View style={{flex:1,position:'relative'}}>
+        <View style={{ flex: 1, position: 'relative' }}>
           {tab === 'Chat' && (
             <View
               style={{ flex: 1 }}
@@ -211,7 +212,7 @@ function Root() {
               }
             >
               <ChatScreen
-              key={app.showAgents ? 'agents' : app.activeAgent?.id || 'chat'}
+                key={app.showAgents ? 'agents' : app.activeAgent?.id || 'chat'}
                 agents={app.agents}
                 activeAgent={app.showAgents ? null : app.activeAgent}
                 messages={app.messages}
@@ -224,7 +225,11 @@ function Root() {
                 onAttachmentChange={app.changeAttachment}
                 runs={app.runs}
                 primaryId={app.primaryId}
-                canSend={app.profileKnown && Boolean(app.profile)}
+                canSend={
+                  app.profileKnown &&
+                  app.profile?.workflowId === app.activeAgent?.id &&
+                  agentProfileReady(app.profile?.config)
+                }
                 onOpen={app.openAgent}
                 onBack={() => {
                   Keyboard.dismiss();
@@ -235,7 +240,11 @@ function Root() {
                   settings();
                 }}
                 onSend={async (content, attachment) => {
-                  if (!app.profileKnown || !app.profile) {
+                  if (
+                    !app.profileKnown ||
+                    app.profile?.workflowId !== app.activeAgent?.id ||
+                    !agentProfileReady(app.profile?.config)
+                  ) {
                     settings();
                     throw new Error('Configura o modelo antes de enviar.');
                   }

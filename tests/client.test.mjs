@@ -655,6 +655,9 @@ test('o catálogo consulta só metadados e exclui conectores privados de outro e
     new CellApi(config, async (url, init) => {
       requests++;
       const parsed = new URL(url);
+      assert.equal(parsed.origin, config.supabaseUrl);
+      assert.equal(parsed.pathname, '/rest/v1/cells_custom_connectors');
+      assert.equal(init.headers.apikey, config.publishableKey);
       assert.equal(
         parsed.searchParams.get('or'),
         '(is_public.eq.true,workspace_id.eq.space-one)',

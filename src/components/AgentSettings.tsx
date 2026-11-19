@@ -18,6 +18,10 @@ import type {
 } from '../types';
 import { C } from '../theme';
 import { Card, Pill, RoundButton, Txt } from './UI';
+import {
+  centralAgentConfig,
+  centralAgentGrants,
+} from '../services/agentProfile';
 
 export const emptyGrants = (): AgentGrants => ({
   editGraph: false,
@@ -25,7 +29,6 @@ export const emptyGrants = (): AgentGrants => ({
   webSearch: false,
   teams: false,
   externalEffects: false,
-  verificationRequired: true,
   executeNodes: [],
   credentialIds: [],
   variableNames: [],
@@ -64,6 +67,7 @@ export const AgentSettings = memo(function AgentSettings({
   });
   const [grants, setGrants] = useState<AgentGrants>(emptyGrants);
   const modelRequest = useRef(0);
+  const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false),
     [loadingModels, setLoadingModels] = useState(false);
   const [models, setModels] = useState<{ id: string; name: string }[]>([]),
@@ -72,22 +76,23 @@ export const AgentSettings = memo(function AgentSettings({
     modelRequest.current++;
     setLoadingModels(false);
     if (!visible) return;
+    setSaveError('');
     setTab(initialTab);
     setConfig(
-      profile?.config || {
-        provider: '',
-        model: '',
-        role: agent.name,
-        systemPrompt: agent.description,
-        temperature: 0.3,
-        maxModelCalls: 24,
-        maxToolCalls: 32,
-        maxOutputTokens: 4096,
-        maxDurationSeconds: 1800,
-        concurrency: 2,
-      },
+      centralAgentConfig(
+        profile?.config || {
+          provider: '',
+          model: '',
+          systemPrompt: agent.description,
+          maxModelCalls: 24,
+          maxToolCalls: 32,
+          maxOutputTokens: 4096,
+          maxDurationSeconds: 1800,
+          concurrency: 2,
+        },
+      ),
     );
-    setGrants(profile?.grants || emptyGrants());
+    setGrants(centralAgentGrants(profile?.grants || emptyGrants()));
     setModels([]);
     return () => {
       modelRequest.current++;
@@ -108,12 +113,7 @@ export const AgentSettings = memo(function AgentSettings({
     label: string,
     detail: string,
     key:
-      | 'editGraph'
-      | 'executeCode'
-      | 'webSearch'
-      | 'teams'
-      | 'externalEffects'
-      | 'verificationRequired',
+      'editGraph' | 'executeCode' | 'webSearch' | 'teams' | 'externalEffects',
   ) => (
     <Card
       key={key}
@@ -385,11 +385,6 @@ export const AgentSettings = memo(function AgentSettings({
                 'Permitir efeitos externos sem pedir aprovação a cada operação.',
                 'externalEffects',
               )}
-              {flag(
-                'Verificação obrigatória',
-                'Exigir verificações antes da conclusão.',
-                'verificationRequired',
-              )}
               <Txt size={15} weight="600">
                 Cells e ferramentas
               </Txt>
@@ -507,6 +502,7 @@ export const AgentSettings = memo(function AgentSettings({
             disabled={saving || !config.credentialId || !config.model.trim()}
             onPress={async () => {
               setSaving(true);
+              setSaveError('');
               try {
                 await onSave(config, {
                   ...grants,
@@ -517,8 +513,14 @@ export const AgentSettings = memo(function AgentSettings({
                     ]),
                   ],
                 });
+                onError('');
                 onClose();
               } catch (error) {
+                setSaveError(
+                  error instanceof Error
+                    ? error.message
+                    : 'Não foi possível guardar.',
+                );
                 onError(
                   error instanceof Error
                     ? error.message
@@ -548,6 +550,13 @@ export const AgentSettings = memo(function AgentSettings({
               </Txt>
             )}
           </Pressable>
+          {!!saveError && (
+            <View accessibilityRole="alert">
+              <Txt size={13} color={C.error}>
+                {saveError}
+              </Txt>
+            </View>
+          )}
         </ScrollView>
       </View>
     </Modal>

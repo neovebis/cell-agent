@@ -92,8 +92,7 @@ try {
       unexpected = [],
       runs = [],
       submissions = [];
-    let profileRevision = 1,
-      downloadRequests = 0;
+    let downloadRequests = 0;
     let releaseOldModels;
     let oldModelsRequested = false;
     let releaseTick;
@@ -111,11 +110,10 @@ try {
     });
     const friendlyAnswer =
       'Claro. Estou aqui para te ouvir. Podemos ir com calma, sem pressa de resolver tudo de uma vez. Conta-me o que estás a sentir ou o que aconteceu hoje e vamos pensar nisso juntos.';
-    let profile = {
+    const profile = {
       provider: 'google',
       model: 'fixture-model',
       credentialId: 'model-key',
-      role: 'Agente principal',
       systemPrompt: 'Instruções de teste',
       maxModelCalls: 8,
       maxToolCalls: 12,
@@ -125,12 +123,36 @@ try {
         webSearch: true,
         teams: false,
         externalEffects: false,
-        verificationRequired: false,
         executeNodes: ['pdf-node'],
         credentialIds: ['model-key', 'service-key'],
         variableNames: ['PARAM'],
       },
     };
+    const profiles = new Map([['workflow-one', structuredClone(profile)]]);
+    const profileRevisions = new Map([['workflow-one', 1]]);
+    const agentSubmissions = [];
+    const centralFields = new Set([
+      'provider',
+      'model',
+      'credentialId',
+      'systemPrompt',
+      'maxModelCalls',
+      'maxToolCalls',
+      'maxOutputTokens',
+      'maxDurationSeconds',
+      'concurrency',
+      'grants',
+    ]);
+    const grantFields = new Set([
+      'editGraph',
+      'executeCode',
+      'webSearch',
+      'executeNodes',
+      'credentialIds',
+      'variableNames',
+      'teams',
+      'externalEffects',
+    ]);
     const workflow = {
       id: 'workflow-one',
       workspace_id: 'space-one',
@@ -186,7 +208,13 @@ try {
         return reply([
           { id: 'space-one', name: 'Espaço de teste', tier: 'free' },
         ]);
-      if (url.pathname === '/rest/v1/cells_custom_connectors')
+      if (url.pathname === '/rest/v1/cells_custom_connectors') {
+        assert.equal(
+          url.origin,
+          supabaseOrigin,
+          'Connector reads belong to the Data API, not the site',
+        );
+        assert.equal(request.headers().apikey, 'fixture-public-key');
         return reply([
           {
             id: 'community-one',
@@ -218,6 +246,7 @@ try {
             workspace_id: 'other-space',
           },
         ]);
+      }
       if (url.pathname === '/rest/v1/cells_workflows')
         return reply([
           workflow,
@@ -227,6 +256,16 @@ try {
             name: 'Griotinho',
             description: 'O teu assistente pessoal',
             graph: { nodes: [], edges: [] },
+          },
+          {
+            ...workflow,
+            id: 'workflow-three',
+            name: 'Chefe',
+            description: 'Agente ainda sem perfil central',
+            graph: {
+              nodes: [{ id: 'chief', type: 'agent', title: 'Chefe' }],
+              edges: [],
+            },
           },
         ]);
       if (url.pathname === '/api/credentials')
@@ -252,16 +291,46 @@ try {
       if (url.pathname === '/api/variables')
         return reply([{ id: 'parameter', name: 'PARAM' }]);
       if (url.pathname === '/api/agents/profile') {
+        assert.equal(url.origin, apiOrigin);
+        const id = body.workflowId || url.searchParams.get('workflowId');
         if (request.method() === 'POST') {
-          profile = body.profile;
-          profileRevision++;
-          submissions.push(body);
+          const candidate = body.profile;
+          if (
+            Object.keys(candidate).some((key) => !centralFields.has(key)) ||
+            Object.keys(candidate.grants || {}).some(
+              (key) => !grantFields.has(key),
+            )
+          )
+            return reply(
+              { error: 'Campo de configuração não suportado.' },
+              422,
+            );
+          if (candidate.model === 'forbidden-model')
+            return reply(
+              { error: 'Credencial fora do workspace autorizado.' },
+              403,
+            );
+          assert.ok(
+            candidate.provider && candidate.model && candidate.credentialId,
+          );
+          profiles.set(id, structuredClone(candidate));
+          profileRevisions.set(id, (profileRevisions.get(id) || 0) + 1);
+          if (id === 'workflow-one') submissions.push(body);
+          else agentSubmissions.push(body);
         }
-        return reply({ profile, revision: profileRevision });
+        return reply({
+          profile: profiles.get(id) || null,
+          revision: profileRevisions.get(id) || 0,
+        });
       }
       if (url.pathname === '/api/agents/runs') {
         if (request.method() === 'POST') {
           assert.ok(body.idempotencyKey);
+          if (!profiles.get(body.workflowId))
+            return reply(
+              { error: 'Configure o modelo do agente central primeiro.' },
+              422,
+            );
           const existing = runs.find((run) => run.key === body.idempotencyKey);
           if (existing) return reply({ run: existing }, 202);
           const time = new Date().toISOString();
@@ -269,7 +338,7 @@ try {
             id:
               '00000000-0000-4000-8000-' +
               String(runs.length + 1).padStart(12, '0'),
-            workflowId: 'workflow-one',
+            workflowId: body.workflowId,
             key: body.idempotencyKey,
             message: body.message,
             status: 'queued',
@@ -293,7 +362,11 @@ try {
             run: runs.find((run) => run.id === url.searchParams.get('id')),
           });
         if (confirmationPending) confirmationReads++;
-        return reply({ runs });
+        return reply({
+          runs: runs.filter(
+            (run) => run.workflowId === url.searchParams.get('workflowId'),
+          ),
+        });
       }
       if (url.pathname === '/api/agents/tick') {
         const run = runs.find((run) => run.id === body.runId);
@@ -441,6 +514,21 @@ try {
     assert.ok(identityBox.height >= 48 && identityBox.height <= 50);
     assert.ok(identityBox.width <= 190, 'Identity keeps its compact width');
     assert.ok((await header.boundingBox()).height <= 64);
+    assert.equal(
+      await header.evaluate((el) => getComputedStyle(el).position),
+      'absolute',
+    );
+    assert.equal(
+      await header.evaluate((el) => getComputedStyle(el).backgroundColor),
+      'rgba(0, 0, 0, 0)',
+    );
+    assert.ok(
+      Math.abs(
+        (await page.getByTestId('chat-messages').boundingBox()).y -
+          (await header.boundingBox()).y,
+      ) < 2,
+      'Messages must extend behind the floating identity instead of a white header row',
+    );
     assert.ok((await composeBar.boundingBox()).height <= 64);
     await page.screenshot({
       path: join(evidence, viewport.name + '-empty.png'),
@@ -491,6 +579,84 @@ try {
     await page.screenshot({
       path: join(evidence, viewport.name + '-agents.png'),
     });
+    for (const [id, name] of [
+      ['workflow-two', 'Griotinho'],
+      ['workflow-three', 'Chefe'],
+    ]) {
+      await page
+        .getByRole('button', { name: 'Abrir chat de ' + name, exact: true })
+        .click();
+      await page
+        .getByRole('button', { name: 'Escolher modelo', exact: true })
+        .waitFor();
+      await composer.fill('Mensagem de ' + name);
+      assert.equal(
+        await page
+          .getByRole('button', { name: 'Enviar mensagem', exact: true })
+          .isEnabled(),
+        false,
+      );
+      await page
+        .getByRole('button', { name: 'Escolher modelo', exact: true })
+        .click();
+      await page.getByText('Configurar agente', { exact: true }).waitFor();
+      const choose = page.getByRole('button', {
+        name: 'Modelo de teste · google',
+        exact: true,
+      });
+      await choose.click();
+      const model = page.getByLabel('ID do modelo', { exact: true });
+      const save = page.getByRole('button', {
+        name: 'Guardar configurações',
+        exact: true,
+      });
+      if (name === 'Chefe') {
+        await model.fill('forbidden-model');
+        await save.click();
+        await page
+          .getByRole('alert')
+          .filter({ hasText: 'Credencial fora do workspace autorizado.' })
+          .last()
+          .waitFor();
+        assert.equal(
+          await page
+            .getByText('Configurar agente', { exact: true })
+            .isVisible(),
+          true,
+        );
+        assert.equal(profiles.has(id), false);
+      }
+      await model.fill('chosen-' + id);
+      await save.click();
+      await page
+        .getByText('Configurar agente', { exact: true })
+        .waitFor({ state: 'hidden' });
+      const stored = profiles.get(id);
+      assert.equal(stored.model, 'chosen-' + id);
+      assert.equal(stored.grants.editGraph, false);
+      assert.equal(stored.grants.executeCode, false);
+      assert.equal(stored.grants.teams, false);
+      assert.equal(stored.grants.externalEffects, false);
+      assert.deepEqual(stored.grants.executeNodes, []);
+      assert.deepEqual(stored.grants.credentialIds, ['model-key']);
+      await page
+        .getByRole('button', { name: 'Enviar mensagem', exact: true })
+        .click();
+      await page.getByText(friendlyAnswer, { exact: true }).waitFor();
+      assert.equal(
+        runs.filter(
+          (run) =>
+            run.workflowId === id && run.message === 'Mensagem de ' + name,
+        ).length,
+        1,
+      );
+      await page.screenshot({
+        path: join(evidence, viewport.name + '-configured-' + id + '.png'),
+      });
+      await back.click();
+    }
+    assert.equal(agentSubmissions.length, 2);
+    assert.deepEqual(profiles.get('workflow-one'), profile);
     await page
       .getByRole('button', { name: 'Abrir chat de Griotinho', exact: true })
       .click();
@@ -920,6 +1086,10 @@ try {
       approvalStillExplicit: true,
       failureVisible: true,
       advancedTabsSingleLine: true,
+      unconfiguredAgentsSavedAndSent: true,
+      strictCentralProfileContract: true,
+      connectorOriginAndKey: true,
+      transparentFloatingHeader: true,
       consoleErrors: errors.length,
     });
     await context.close();

@@ -3,13 +3,11 @@ export type Tab = 'Chat' | 'Capture' | 'Conectores' | 'Atividade' | 'Perfil';
 export interface AgentConfig {
   provider: string; // 'openai' | 'anthropic' | 'google' | 'groq' | 'mistral' | 'deepseek'
   model: string;
-  role?: string;
   systemPrompt?: string;
   maxModelCalls?: number;
   maxToolCalls?: number;
   maxOutputTokens?: number;
   maxDurationSeconds?: number;
-  temperature?: number;
   concurrency?: number;
   credentialId?: string;
 }
@@ -20,7 +18,6 @@ export interface AgentGrants {
   webSearch?: boolean;
   teams: boolean;
   externalEffects: boolean;
-  verificationRequired?: boolean;
   executeNodes?: string[];
   credentialIds?: string[];
   variableNames?: string[];
