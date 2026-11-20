@@ -646,6 +646,7 @@ try {
         .getByRole('button', { name: 'Enviar mensagem', exact: true })
         .click();
       await page.getByText(friendlyAnswer, { exact: true }).waitFor();
+      await waitForPainted(page.getByText(friendlyAnswer, { exact: true }));
       assert.equal(
         runs.filter(
           (run) =>
@@ -1065,6 +1066,22 @@ try {
           document.documentElement.clientWidth,
       ),
     );
+    await page.setViewportSize({width:viewport.width,height:300});
+    await page.waitForTimeout(300);
+    const messageList = page.getByTestId('chat-messages');
+    const firstReply = page.getByTestId('agent-message').first();
+    await messageList.evaluate(el=>{el.scrollTop=0;});
+    await page.waitForTimeout(100);
+    const firstReplyTop = (await firstReply.boundingBox()).y;
+    await messageList.evaluate((el,offset)=>{el.scrollTop+=offset;},firstReplyTop-12);
+    await page.waitForTimeout(150);
+    assert.equal(await page.evaluate(()=>{
+      let element=document.elementFromPoint(65,25);
+      while(element){if(getComputedStyle(element).backgroundColor==='rgb(242, 242, 242)')return true;element=element.parentElement;}
+      return false;
+    }),true,'The reply must remain visible through the header outside the floating capsule');
+    await page.screenshot({path:join(evidence,viewport.name+'-transparent-header.png')});
+    await page.setViewportSize({width:viewport.width,height:viewport.height});
     assert.deepEqual(unexpected, []);
     assert.equal(expectedProfile403,1);
     assert.equal(observedProfile403,1);
