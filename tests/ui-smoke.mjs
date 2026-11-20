@@ -88,6 +88,7 @@ try {
       viewport: { width: viewport.width, height: viewport.height },
       serviceWorkers: 'block',
     });
+    let expectedProfile403 = 0, observedProfile403 = 0;
     const errors = [],
       unexpected = [],
       runs = [],
@@ -305,11 +306,10 @@ try {
               { error: 'Campo de configuração não suportado.' },
               422,
             );
-          if (candidate.model === 'forbidden-model')
-            return reply(
-              { error: 'Credencial fora do workspace autorizado.' },
-              403,
-            );
+          if (candidate.model === 'forbidden-model') {
+            expectedProfile403++;
+            return reply({ error: 'Credencial fora do workspace autorizado.' },403);
+          }
           assert.ok(
             candidate.provider && candidate.model && candidate.credentialId,
           );
@@ -454,7 +454,10 @@ try {
       console.error('UI page error:', error.message);
     });
     page.on('console', (message) => {
-      if (message.type() === 'error') errors.push(message.text());
+      if (message.type() === 'error') {
+        if(expectedProfile403 > observedProfile403 && message.location().url === apiOrigin + '/api/agents/profile' && message.text() === 'Failed to load resource: the server responded with a status of 403 (Forbidden)') observedProfile403++;
+        else errors.push(message.text());
+      }
     });
     await page.goto(origin, { waitUntil: 'networkidle' });
     assert.equal(page.url(), origin + '/');
@@ -1063,6 +1066,8 @@ try {
       ),
     );
     assert.deepEqual(unexpected, []);
+    assert.equal(expectedProfile403,1);
+    assert.equal(observedProfile403,1);
     assert.deepEqual(errors, []);
     verdicts.push({
       viewport: viewport.name,
