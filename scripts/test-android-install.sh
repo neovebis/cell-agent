@@ -55,11 +55,11 @@ launch fresh
 adb uninstall "$PACKAGE"
 adb install --no-incremental "$BASELINE" | tee "$OUT/baseline-install.txt"
 adb shell dumpsys package "$PACKAGE" > "$OUT/baseline-package.txt"
-before_uid=$(sed -n 's/.*userId=\([0-9]*\).*/\1/p' "$OUT/baseline-package.txt" | head -n 1)
+before_uid=$(sed -nE 's/^[[:space:]]*(appId|userId)=([0-9]+).*/\2/p' "$OUT/baseline-package.txt" | head -n 1)
 test -n "$before_uid"
 adb install --no-incremental -r "$APK" | tee "$OUT/update-install.txt"
 adb shell dumpsys package "$PACKAGE" > "$OUT/updated-package.txt"
-after_uid=$(sed -n 's/.*userId=\([0-9]*\).*/\1/p' "$OUT/updated-package.txt" | head -n 1)
+after_uid=$(sed -nE 's/^[[:space:]]*(appId|userId)=([0-9]+).*/\2/p' "$OUT/updated-package.txt" | head -n 1)
 test "$before_uid" = "$after_uid"
 launch updated
 printf 'Fresh installation and update passed; package UID preserved.\n' | tee "$OUT/result.txt"
