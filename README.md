@@ -55,4 +55,8 @@ O build UI isolado usa as variáveis de teste e a pasta build/test-web. O bundle
 
 A v0.3.3 mantém a chave e o armazenamento das versões 0.3.0, 0.3.1 e 0.3.2. O código Android aumenta para 9, permitindo atualização sem desinstalar.
 
+A v0.2.2 usa um certificado diferente e não permite atualização direta para a v0.3.3. As atualizações com a mesma assinatura são suportadas a partir da v0.3.0.
+
 A workflow de APK continua separada e produz um APK release assinado, checksum, manifesto e metadados de assinatura nos artefactos, sem publicar releases automaticamente. Exige os GitHub Secrets KEYSTORE_BASE64, KEYSTORE_ALIAS, KEYSTORE_PASSWORD e KEY_PASSWORD; nunca gera uma chave de substituição durante o build. Compara o certificado com o APK v0.2.2 e regista se permite atualização direta. Produzir um APK de atualização exige a chave de assinatura correspondente à versão instalada.
+
+A workflow de APK também testa a instalação limpa, a atualização sobre a v0.3.2 e a abertura do ecrã de entrada em emuladores Android 14 e 16. Confere os checksums dos downloads e a identidade do pacote após atualizar. O teste só opera num emulador descartável, com Wi-Fi e dados desligados, sem iniciar sessão nem executar pedidos de produção.
