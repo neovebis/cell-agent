@@ -28,8 +28,6 @@ BASELINE="${baselines[0]}"
 # Keep the app offline: installation/launch tests never use a real account.
 adb shell svc wifi disable
 adb shell svc data disable
-adb shell settings put global airplane_mode_on 1
-adb shell am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true >/dev/null
 adb shell getprop ro.build.version.sdk | tee "$OUT/api-level.txt"
 adb shell getprop ro.product.cpu.abilist | tee "$OUT/abis.txt"
 adb logcat -c
