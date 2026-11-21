@@ -1,0 +1,65 @@
+name: Validate CELL AGENT
+on:
+  push:
+    branches: ['codex/cell-agent-*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cell-agent-validation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: '1'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install app dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Check Expo SDK compatibility
+        run: npx expo install --check
+      - name: Check types and protocol contracts
+        run: |
+          npm run typecheck
+          npm test
+      - name: Export Android bundle
+        run: npm run build:android
+      - name: Export web preview
+        run: npm run build:web
+      - name: Export isolated UI test build
+        run: npx expo export --platform web --clear --output-dir build/test-web
+        env:
+          EXPO_PUBLIC_CELL_API_URL: https://cell-api.example
+          EXPO_PUBLIC_SUPABASE_URL: https://supabase.example
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: fixture-public-key
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Check desktop and mobile UI
+        run: npm run test:ui
+        env:
+          CELL_UI_EVIDENCE: ${{ runner.temp }}/cell-agent-evidence
+      - name: Preserve dependency lockfile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-agent-lockfile
+          path: package-lock.json
+          if-no-files-found: ignore
+      - name: Preserve app preview and UI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-agent-preview
+          path: |
+            dist
+            build/test-web
+            ${{ runner.temp }}/cell-agent-evidence
+          if-no-files-found: ignore

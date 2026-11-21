@@ -4,21 +4,24 @@ const path = require('path');
 const gradlePath = path.join(__dirname, '..', 'android', 'app', 'build.gradle');
 
 if (!fs.existsSync(gradlePath)) {
-  console.log('Notice: build.gradle not found at', gradlePath);
-  process.exit(0);
+  console.error('Error: Android project must be generated before signing.');
+  process.exit(1);
 }
 
 let content = fs.readFileSync(gradlePath, 'utf8');
 
-const storePass = process.env.STORE_PASS || 'cellagent123';
-const keyAlias = process.env.KEY_ALIAS || 'cellagent';
-const keyPass = process.env.KEY_PASS || 'cellagent123';
+for (const name of ['STORE_PASS', 'KEY_ALIAS', 'KEY_PASS']) {
+  if (!process.env[name]) {
+    console.error('Missing signing environment: ' + name);
+    process.exit(1);
+  }
+}
 
 const releaseSigning = `        release {
             storeFile file('release.keystore')
-            storePassword '${storePass}'
-            keyAlias '${keyAlias}'
-            keyPassword '${keyPass}'
+            storePassword System.getenv('STORE_PASS')
+            keyAlias System.getenv('KEY_ALIAS')
+            keyPassword System.getenv('KEY_PASS')
             v1SigningEnabled true
             v2SigningEnabled true
         }`;
@@ -31,7 +34,7 @@ if (!content.includes("storeFile file('release.keystore')")) {
   }
   content = content.replace(
     /signingConfigs\s*\{/,
-    `signingConfigs {\n${releaseSigning}`
+    `signingConfigs {\n${releaseSigning}`,
   );
 }
 
@@ -47,7 +50,9 @@ const contentAfterBt = content.slice(btStart);
 const relMatch = contentAfterBt.match(/(\brelease\s*\{)([^}]*)/);
 
 if (!relMatch) {
-  console.error('Error: release block inside buildTypes not found in build.gradle');
+  console.error(
+    'Error: release block inside buildTypes not found in build.gradle',
+  );
   process.exit(1);
 }
 
@@ -56,19 +61,31 @@ const relInner = relMatch[2];
 let newRel = '';
 
 if (relInner.includes('signingConfig')) {
-  newRel = relMatch[0].replace(/signingConfig\s+signingConfigs\.\w+/, 'signingConfig signingConfigs.release');
+  newRel = relMatch[0].replace(
+    /signingConfig\s+signingConfigs\.\w+/,
+    'signingConfig signingConfigs.release',
+  );
 } else {
   newRel = `${relMatch[1]}\n            signingConfig signingConfigs.release${relInner}`;
 }
 
-content = content.slice(0, relFullStart) + newRel + content.slice(relFullStart + relMatch[0].length);
+content =
+  content.slice(0, relFullStart) +
+  newRel +
+  content.slice(relFullStart + relMatch[0].length);
 
 // 3. Strict verification: assert that signingConfigs.release is actually assigned in release buildType
-const verifyMatch = content.match(/release\s*\{[^}]*signingConfig\s+signingConfigs\.release/);
+const verifyMatch = content.match(
+  /release\s*\{[^}]*signingConfig\s+signingConfigs\.release/,
+);
 if (!verifyMatch) {
-  console.error('Error: release buildType does not contain signingConfig signingConfigs.release after injection!');
+  console.error(
+    'Error: release buildType does not contain signingConfig signingConfigs.release after injection!',
+  );
   process.exit(1);
 }
 
 fs.writeFileSync(gradlePath, content, 'utf8');
-console.log('Successfully configured and verified release signing in android/app/build.gradle');
+console.log(
+  'Successfully configured and verified release signing in android/app/build.gradle',
+);
