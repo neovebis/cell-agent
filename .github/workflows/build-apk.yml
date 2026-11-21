@@ -9,6 +9,11 @@ on:
         type: string
         required: false
         default: ''
+      install_test_release:
+        description: Published release to diagnose on Android emulators without rebuilding
+        type: string
+        required: false
+        default: ''
 permissions:
   contents: read
 concurrency:
@@ -16,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    if: ${{ inputs.candidate_run_id == '' }}
+    if: ${{ inputs.candidate_run_id == '' && inputs.install_test_release == '' }}
     name: Build signed Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -106,7 +111,7 @@ jobs:
         if: always()
         run: rm -f android/app/release.keystore
   verify_candidate:
-    if: ${{ inputs.candidate_run_id != '' }}
+    if: ${{ inputs.candidate_run_id != '' && inputs.install_test_release == '' }}
     name: Verify compiled Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -174,3 +179,71 @@ jobs:
       - name: Remove temporary signing material
         if: always()
         run: rm -f android/app/release.keystore
+
+  install_apk:
+    name: Install APK on Android API ${{ matrix.api }}
+    needs: [build, verify_candidate]
+    if: ${{ always() && (inputs.install_test_release != '' || needs.build.result == 'success' || needs.verify_candidate.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [34, 36]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download verified build
+        if: ${{ inputs.install_test_release == '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cell-agent-mobile-v*-apk
+          path: build-output
+          merge-multiple: true
+      - name: Download published APK for diagnosis
+        if: ${{ inputs.install_test_release != '' }}
+        env:
+          RELEASE_TAG: ${{ inputs.install_test_release }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --pattern '*.apk.sha256' --pattern build-info.json --dir build-output
+      - name: Check download and obtain update baseline
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          (cd build-output && sha256sum -c *.apk.sha256)
+          gh release download v0.3.2 --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --pattern '*.apk.sha256' --dir build-install/baseline
+          (cd build-install/baseline && sha256sum -c *.apk.sha256)
+      - name: Enable hardware acceleration
+        run: |
+          test -c /dev/kvm
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install, update and launch production APK
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          ram-size: 2048M
+          emulator-boot-timeout: 600
+          disable-animations: true
+          script: bash scripts/test-android-install.sh
+        env:
+          CI: 'true'
+          ANDROID_SERIAL: emulator-5554
+      - name: Preserve installation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cell-agent-install-api-${{ matrix.api }}
+          path: build/installation-evidence/
+          retention-days: 14
+          if-no-files-found: ignore
