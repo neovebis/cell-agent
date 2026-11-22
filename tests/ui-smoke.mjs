@@ -1078,7 +1078,27 @@ try {
         .closest('[data-testid="capture-card"]')
         .getBoundingClientRect();
       const range = document.createRange();
-      range.selectNodeContents(el);
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const lines = new Map();
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        for (let i = 0; i < node.textContent.length; i++) {
+          if (!node.textContent[i].trim()) continue;
+          range.setStart(node, i);
+          range.setEnd(node, i + 1);
+          const rect = range.getBoundingClientRect();
+          if (!rect.width || !rect.height) continue;
+          const key = Math.round(rect.y);
+          const line = lines.get(key) || {
+            x: rect.x,
+            right: rect.right,
+            bottom: rect.bottom,
+          };
+          line.x = Math.min(line.x, rect.x);
+          line.right = Math.max(line.right, rect.right);
+          line.bottom = Math.max(line.bottom, rect.bottom);
+          lines.set(key, line);
+        }
+      }
       return {
         textAlign: getComputedStyle(el).textAlign,
         card: {
@@ -1087,16 +1107,20 @@ try {
           bottom: card.bottom,
           width: card.width,
         },
-        lines: [...range.getClientRects()]
-          .filter((r) => r.width > 0)
-          .map((r) => ({
-            x: r.x,
-            right: r.right,
-            bottom: r.bottom,
-            width: r.width,
-          })),
+        lines: [...lines.values()].map((line) => ({
+          ...line,
+          width: line.right - line.x,
+        })),
       };
     });
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-capture.png'),
+    });
+    console.log(
+      'Capture text layout',
+      viewport.name,
+      JSON.stringify(textLayout),
+    );
     assert.equal(textLayout.textAlign, 'center');
     assert.ok(textLayout.lines.length > 0);
     for (const line of textLayout.lines) {
@@ -1118,9 +1142,6 @@ try {
         'Capture text is not clipped',
       );
     }
-    await page.screenshot({
-      path: join(evidence, viewport.name + '-capture.png'),
-    });
     await page.getByRole('tab', { name: 'Perfil', exact: true }).click();
     await page.getByText('Avançado', { exact: true }).click();
     for (const label of ['Cofre & Vars', 'Segurança', 'Endpoints']) {
