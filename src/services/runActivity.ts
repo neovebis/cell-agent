@@ -115,7 +115,7 @@ export function activityLabel(run: AgentRun): string {
     ),
   ).size;
   const parts = [
-    tools ? tools + (tools === 1 ? ' operação' : ' operações') : '',
+    tools ? tools + (tools === 1 ? ' ação' : ' ações') : '',
     files ? files + (files === 1 ? ' ficheiro' : ' ficheiros') : '',
     sources ? sources + (sources === 1 ? ' fonte' : ' fontes') : '',
   ].filter(Boolean);
