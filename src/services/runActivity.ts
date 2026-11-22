@@ -22,6 +22,8 @@ const SENSITIVE =
 const HIDDEN =
   /^(reasoning|thinking|chain_of_thought|analysis|systemPrompt|credentials?|headers|env|environment)$/i;
 const DETAILS = [
+  'query',
+  'answer',
   'command',
   'language',
   'code',
@@ -157,6 +159,11 @@ export function buildRunActivity(run: AgentRun): RunActivity {
       for (const k of DETAILS) {
         const text = publicActivityText(object[k]);
         if (text) detail.push(k + '\n' + text);
+      }
+      if (['project.command', 'project.build'].includes(o.tool || '') && object.project && typeof object.project === 'object') {
+        const command = (object.project as {lastCommand?: {command?:unknown}}).lastCommand;
+        const text = publicActivityText(command?.command);
+        if (text && typeof object.command !== 'string') detail.unshift('command\n' + text);
       }
       if (typeof object.exitCode === 'number')
         detail.push('Código de saída: ' + object.exitCode);

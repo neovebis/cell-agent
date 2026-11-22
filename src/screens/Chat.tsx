@@ -773,7 +773,7 @@ export function ChatScreen(props: Props) {
           }}
           style={[
             styles.composerOverlay,
-            { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) },
+            { paddingBottom: keyboardVisible ? 8 : insets.bottom + 8 },
           ]}
         >
           {/* Attachment Chip Preview */}
