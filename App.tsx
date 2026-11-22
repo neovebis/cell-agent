@@ -1,3 +1,4 @@
+import 'react-native-gesture-handler';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,7 +11,12 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { BottomNav } from './src/components/BottomNav';
 import { LiveMotion } from './src/components/LiveMotion';
@@ -110,6 +116,7 @@ function Login({
 
 function Root() {
   const app = useAgentApp();
+  const safeInsets = useSafeAreaInsets();
   const [agentPanel, setAgentPanel] = useState<{
     id: string;
     kind: 'tasks' | 'tools';
@@ -160,8 +167,20 @@ function Root() {
       </View>
     );
   const message = app.notice || (app.session ? app.connectionError : '');
+  const chatVisible =
+    app.session &&
+    tab === 'Chat' &&
+    !app.showAgents &&
+    app.activeAgent &&
+    !agentPanel;
   return (
-    <View style={{ flex: 1, backgroundColor: C.white }}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: C.white,
+        paddingBottom: chatVisible ? 0 : safeInsets.bottom,
+      }}
+    >
       {!!message && (
         <View
           accessibilityRole="alert"
@@ -217,7 +236,7 @@ function Root() {
                 activeAgent={app.showAgents ? null : app.activeAgent}
                 messages={app.messages}
                 busy={app.sending}
-                obscured={Boolean(agentPanel)}
+                obscured={Boolean(agentPanel) || settingsOpen}
                 captures={app.captures}
                 draft={app.draft}
                 attachment={app.attachment}
@@ -419,14 +438,19 @@ function Root() {
 }
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <KeyboardProvider>
-        <SafeAreaView style={{ flex: 1, backgroundColor: C.white }}>
-          <StatusBar barStyle="dark-content" backgroundColor={C.white} />
-          <Root />
-        </SafeAreaView>
-      </KeyboardProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <KeyboardProvider>
+          <SafeAreaView
+            edges={['top', 'left', 'right']}
+            style={{ flex: 1, backgroundColor: C.white }}
+          >
+            <StatusBar barStyle="dark-content" backgroundColor={C.white} />
+            <Root />
+          </SafeAreaView>
+        </KeyboardProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 const styles = StyleSheet.create({

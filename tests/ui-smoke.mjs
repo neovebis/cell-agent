@@ -1,5 +1,6 @@
 // UI-only protocol fixtures. This test never contacts Cell Griot or production accounts.
 import assert from 'node:assert/strict';
+import { checkLiveActivity, checkRunActivity } from './chat-interactions.mjs';
 import { createServer } from 'node:http';
 import { readFile, mkdir, stat } from 'node:fs/promises';
 import { resolve, join, extname, sep } from 'node:path';
@@ -88,12 +89,14 @@ try {
       viewport: { width: viewport.width, height: viewport.height },
       serviceWorkers: 'block',
     });
-    let expectedProfile403 = 0, observedProfile403 = 0;
+    let expectedProfile403 = 0,
+      observedProfile403 = 0;
     const errors = [],
       unexpected = [],
       runs = [],
       submissions = [];
     let downloadRequests = 0;
+    let sourceRequests = 0;
     let releaseOldModels;
     let oldModelsRequested = false;
     let releaseTick;
@@ -185,6 +188,19 @@ try {
       ) {
         await route.continue();
         return;
+      }
+      if (
+        url.origin === 'https://sources.example' &&
+        url.pathname === '/verified'
+      ) {
+        assert.equal(request.headers().authorization, undefined);
+        assert.equal(request.headers().apikey, undefined);
+        sourceRequests++;
+        return route.fulfill({
+          status: 200,
+          contentType: 'text/html',
+          body: '<p>Fonte de teste verificada</p>',
+        });
       }
       if (![apiOrigin, supabaseOrigin].includes(url.origin)) {
         unexpected.push(request.url());
@@ -308,7 +324,10 @@ try {
             );
           if (candidate.model === 'forbidden-model') {
             expectedProfile403++;
-            return reply({ error: 'Credencial fora do workspace autorizado.' },403);
+            return reply(
+              { error: 'Credencial fora do workspace autorizado.' },
+              403,
+            );
           }
           assert.ok(
             candidate.provider && candidate.model && candidate.credentialId,
@@ -401,6 +420,67 @@ try {
               updatedAt: new Date().toISOString(),
               answer: friendlyAnswer,
               modelCalls: 1,
+              ...(run.message === 'Quero conversar um pouco.'
+                ? {
+                    toolCalls: 3,
+                    observations: [
+                      {
+                        step: 1,
+                        tool: 'project.command',
+                        success: true,
+                        result: {
+                          command: 'node --test',
+                          stdout: 'Verificação concluída\nTOKEN=fixture-secret',
+                          exitCode: 0,
+                          reasoning: 'INTERNAL_REASONING',
+                        },
+                      },
+                      {
+                        step: 2,
+                        tool: 'project.read',
+                        success: true,
+                        result: {
+                          path: 'relatorio.txt',
+                          content: 'Linha lida do ficheiro.',
+                        },
+                      },
+                      {
+                        step: 3,
+                        tool: 'web.search',
+                        success: true,
+                        result: {
+                          sources: [
+                            {
+                              title: 'Fonte verificada',
+                              url: 'https://sources.example/verified',
+                            },
+                            {
+                              title: 'Privada',
+                              url: 'https://private-source.example/?token=fixture-secret',
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                    searches: [
+                      {
+                        query: 'consulta de teste',
+                        sources: [
+                          {
+                            title: 'Fonte verificada',
+                            url: 'https://sources.example/verified',
+                          },
+                        ],
+                      },
+                    ],
+                    events: [
+                      {
+                        summary: 'Verificação partilhada concluída.',
+                        created_at: '2026-11-22T10:01:00Z',
+                      },
+                    ],
+                  }
+                : {}),
             });
           }
         }
@@ -455,7 +535,13 @@ try {
     });
     page.on('console', (message) => {
       if (message.type() === 'error') {
-        if(expectedProfile403 > observedProfile403 && message.location().url === apiOrigin + '/api/agents/profile' && message.text() === 'Failed to load resource: the server responded with a status of 403 (Forbidden)') observedProfile403++;
+        if (
+          expectedProfile403 > observedProfile403 &&
+          message.location().url === apiOrigin + '/api/agents/profile' &&
+          message.text() ===
+            'Failed to load resource: the server responded with a status of 403 (Forbidden)'
+        )
+          observedProfile403++;
         else errors.push(message.text());
       }
     });
@@ -826,6 +912,7 @@ try {
     await page.screenshot({
       path: join(evidence, viewport.name + '-working.png'),
     });
+    await checkLiveActivity(page);
     const completedTickAt = Date.now();
     releaseTick();
     await page
@@ -1032,6 +1119,14 @@ try {
     await page.screenshot({
       path: join(evidence, viewport.name + '-chat.png'),
     });
+    await checkRunActivity(page, {
+      composer,
+      openChat,
+      viewport,
+      evidence,
+      friendlyAnswer,
+    });
+    assert.equal(sourceRequests, 1);
     await composer.fill('Falha controlada.');
     await page
       .getByRole('button', { name: 'Enviar mensagem', exact: true })
@@ -1066,25 +1161,44 @@ try {
           document.documentElement.clientWidth,
       ),
     );
-    await page.setViewportSize({width:viewport.width,height:300});
+    await page.setViewportSize({ width: viewport.width, height: 300 });
     await page.waitForTimeout(300);
     const messageList = page.getByTestId('chat-messages');
     const firstReply = page.getByTestId('agent-message').first();
-    await messageList.evaluate(el=>{el.scrollTop=0;});
+    await messageList.evaluate((el) => {
+      el.scrollTop = 0;
+    });
     await page.waitForTimeout(100);
     const firstReplyTop = (await firstReply.boundingBox()).y;
-    await messageList.evaluate((el,offset)=>{el.scrollTop+=offset;},firstReplyTop-12);
+    await messageList.evaluate((el, offset) => {
+      el.scrollTop += offset;
+    }, firstReplyTop - 12);
     await page.waitForTimeout(150);
-    assert.equal(await page.evaluate(()=>{
-      let element=document.elementFromPoint(65,25);
-      while(element){if(getComputedStyle(element).backgroundColor==='rgb(242, 242, 242)')return true;element=element.parentElement;}
-      return false;
-    }),true,'The reply must remain visible through the header outside the floating capsule');
-    await page.screenshot({path:join(evidence,viewport.name+'-transparent-header.png')});
-    await page.setViewportSize({width:viewport.width,height:viewport.height});
+    assert.equal(
+      await page.evaluate(() => {
+        let element = document.elementFromPoint(65, 25);
+        while (element) {
+          if (
+            getComputedStyle(element).backgroundColor === 'rgb(242, 242, 242)'
+          )
+            return true;
+          element = element.parentElement;
+        }
+        return false;
+      }),
+      true,
+      'The reply must remain visible through the header outside the floating capsule',
+    );
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-transparent-header.png'),
+    });
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
     assert.deepEqual(unexpected, []);
-    assert.equal(expectedProfile403,1);
-    assert.equal(observedProfile403,1);
+    assert.equal(expectedProfile403, 1);
+    assert.equal(observedProfile403, 1);
     assert.deepEqual(errors, []);
     verdicts.push({
       viewport: viewport.name,
@@ -1112,6 +1226,12 @@ try {
       strictCentralProfileContract: true,
       connectorOriginAndKey: true,
       transparentFloatingHeader: true,
+      transparentFloatingComposer: true,
+      realRunActivity: true,
+      privateDataRedacted: true,
+      safeSources: true,
+      swipeBackPreservesDraft: true,
+      agentActivityIsolation: true,
       consoleErrors: errors.length,
     });
     await context.close();

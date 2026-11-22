@@ -176,13 +176,24 @@ export interface AgentRun {
   maxToolCalls?: number;
   approvalHash?: string;
   approval?: { reason: string; action?: unknown } | null;
+  searches?: {
+    query?: string;
+    searchedAt?: string;
+    sources?: { title: string; url: string }[];
+  }[];
   observations?: {
+    step?: number;
     tool?: string;
     success?: boolean;
     error?: string;
     result?: unknown;
   }[];
-  events?: { event?: string; summary?: string; createdAt?: string }[];
+  events?: {
+    event?: string;
+    summary?: string;
+    createdAt?: string;
+    created_at?: string;
+  }[];
   files?: AgentFile[];
   generatedFiles?: AgentFile[];
 }

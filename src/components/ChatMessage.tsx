@@ -14,6 +14,7 @@ import * as Clipboard from 'expo-clipboard';
 import type { AgentMessage, AgentRun } from '../types';
 import { C } from '../theme';
 import { Icon, Txt } from './UI';
+import { ActivityBar } from './RunActivity';
 
 const NO_FILES: NonNullable<AgentRun['generatedFiles']> = [];
 
@@ -75,152 +76,178 @@ export const ThinkingBubble = memo(function ThinkingBubble({
   );
 });
 
-export const MessageBubble = memo(function MessageBubble({
-  item,
-  files = NO_FILES,
-  animate = true,
-  onFile,
-  onError,
-}: {
-  item: AgentMessage;
-  files?: AgentRun['generatedFiles'];
-  animate?: boolean;
-  onFile: (runId: string, fileId: string) => void;
-  onError: (message: string) => void;
-}) {
-  const reduced = useReducedMotion();
-  const opacity = useSharedValue(animate && !reduced ? 0 : 1);
-  const offset = useSharedValue(animate && !reduced ? 6 : 0);
-  const entrance = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-    transform: [{ translateY: offset.value }],
-  }));
-  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-  const [copyOpen, setCopyOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const isUser = item.role === 'user';
-  useEffect(() => {
-    const config = {
-      duration: reduced || !animate ? 0 : 240,
-      easing: Easing.out(Easing.cubic),
+export const MessageBubble = memo(
+  function MessageBubble({
+    item,
+    files = NO_FILES,
+    animate = true,
+    onFile,
+    onError,
+    run,
+    onActivity,
+  }: {
+    item: AgentMessage;
+    files?: AgentRun['generatedFiles'];
+    animate?: boolean;
+    onFile: (runId: string, fileId: string) => void;
+    onError: (message: string) => void;
+    run?: AgentRun;
+    onActivity?: (id: string) => void;
+  }) {
+    const reduced = useReducedMotion();
+    const opacity = useSharedValue(animate && !reduced ? 0 : 1);
+    const offset = useSharedValue(animate && !reduced ? 6 : 0);
+    const entrance = useAnimatedStyle(() => ({
+      opacity: opacity.value,
+      transform: [{ translateY: offset.value }],
+    }));
+    const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+      undefined,
+    );
+    const [copyOpen, setCopyOpen] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const isUser = item.role === 'user';
+    useEffect(() => {
+      const config = {
+        duration: reduced || !animate ? 0 : 240,
+        easing: Easing.out(Easing.cubic),
+      };
+      opacity.value = withTiming(1, config);
+      offset.value = withTiming(0, config);
+      return () => {
+        cancelAnimation(opacity);
+        cancelAnimation(offset);
+      };
+    }, [animate, reduced, opacity, offset]);
+    useEffect(() => () => clearTimeout(copyTimer.current), []);
+    const date = new Date(item.createdAt);
+    const time = Number.isNaN(date.valueOf())
+      ? ''
+      : date.toLocaleTimeString('pt-PT', {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+    const copy = async () => {
+      try {
+        await Clipboard.setStringAsync(item.content);
+        setCopied(true);
+        clearTimeout(copyTimer.current);
+        copyTimer.current = setTimeout(() => {
+          setCopied(false);
+          setCopyOpen(false);
+        }, 1200);
+      } catch {
+        onError('Não foi possível copiar a mensagem.');
+      }
     };
-    opacity.value = withTiming(1, config);
-    offset.value = withTiming(0, config);
-    return () => {
-      cancelAnimation(opacity);
-      cancelAnimation(offset);
-    };
-  }, [animate, reduced, opacity, offset]);
-  useEffect(() => () => clearTimeout(copyTimer.current), []);
-  const date = new Date(item.createdAt);
-  const time = Number.isNaN(date.valueOf())
-    ? ''
-    : date.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
-  const copy = async () => {
-    try {
-      await Clipboard.setStringAsync(item.content);
-      setCopied(true);
-      clearTimeout(copyTimer.current);
-      copyTimer.current = setTimeout(() => {
-        setCopied(false);
-        setCopyOpen(false);
-      }, 1200);
-    } catch {
-      onError('Não foi possível copiar a mensagem.');
-    }
-  };
-  return (
-    <Animated.View
-      nativeID={item.id}
-      testID={isUser ? 'user-message' : 'agent-message'}
-      style={[
-        styles.message,
-        { alignItems: isUser ? 'flex-end' : 'flex-start' },
-        entrance,
-      ]}
-    >
-      {copyOpen && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Copiar mensagem"
-          onPress={() => void copy()}
-          style={styles.copy}
-        >
-          <Icon
-            name={copied ? 'checkmark-outline' : 'copy-outline'}
-            size={14}
-          />
-          <Txt size={12}>{copied ? 'Copiado' : 'Copiar'}</Txt>
-        </Pressable>
-      )}
-      <Pressable
-        onPress={() => {
-          if (isUser) setCopyOpen((value) => !value);
-        }}
-        onLongPress={() => setCopyOpen(true)}
-        style={[styles.body, isUser ? styles.userBody : styles.agentBody]}
+    return (
+      <Animated.View
+        nativeID={item.id}
+        testID={isUser ? 'user-message' : 'agent-message'}
+        style={[
+          styles.message,
+          { alignItems: isUser ? 'flex-end' : 'flex-start' },
+          entrance,
+        ]}
       >
-        {!!item.content && (
-          <Txt
-            size={14}
-            color={isUser ? C.white : C.ink}
-            style={{ lineHeight: 21 }}
-          >
-            {item.content}
-          </Txt>
-        )}
-        {!!item.attachments?.length && (
-          <View style={{ gap: 5, marginTop: 7 }}>
-            {item.attachments.map((file, index) => (
-              <View key={index} style={styles.attachment}>
-                <Icon
-                  name="document-attach-outline"
-                  size={14}
-                  color={isUser ? C.white : C.muted}
-                />
-                <Txt
-                  size={12}
-                  color={isUser ? C.white : C.muted}
-                  numberOfLines={1}
-                  style={{ flexShrink: 1 }}
-                >
-                  {file.name}
-                </Txt>
-              </View>
-            ))}
-          </View>
-        )}
-        {isUser && (
-          <Txt
-            size={9}
-            color={item.status === 'failed' ? '#FFB4B4' : '#B9B9B9'}
-            style={{ alignSelf: 'flex-end', marginTop: 3 }}
-          >
-            {item.status === 'failed' ? 'Por confirmar' : time}
-          </Txt>
-        )}
-      </Pressable>
-      {!isUser &&
-        files.map((file) => (
+        {copyOpen && (
           <Pressable
-            key={file.id}
             accessibilityRole="button"
-            accessibilityLabel={'Descarregar ' + file.name}
-            onPress={() => item.runId && onFile(item.runId, file.id)}
-            style={styles.file}
+            accessibilityLabel="Copiar mensagem"
+            onPress={() => void copy()}
+            style={styles.copy}
           >
-            <Icon name="document-attach-outline" size={17} />
-            <Txt size={13} numberOfLines={1} style={{ flex: 1 }}>
-              {file.name}
-            </Txt>
-            <Icon name="download-outline" size={17} color={C.muted} />
+            <Icon
+              name={copied ? 'checkmark-outline' : 'copy-outline'}
+              size={14}
+            />
+            <Txt size={12}>{copied ? 'Copiado' : 'Copiar'}</Txt>
           </Pressable>
-        ))}
-    </Animated.View>
-  );
-});
+        )}
+        <Pressable
+          onPress={() => {
+            if (isUser) setCopyOpen((value) => !value);
+          }}
+          onLongPress={() => setCopyOpen(true)}
+          style={[styles.body, isUser ? styles.userBody : styles.agentBody]}
+        >
+          {!!item.content && (
+            <Txt
+              size={14}
+              color={isUser ? C.white : C.ink}
+              style={{ lineHeight: 21 }}
+            >
+              {item.content}
+            </Txt>
+          )}
+          {!!item.attachments?.length && (
+            <View style={{ gap: 5, marginTop: 7 }}>
+              {item.attachments.map((file, index) => (
+                <View key={index} style={styles.attachment}>
+                  <Icon
+                    name="document-attach-outline"
+                    size={14}
+                    color={isUser ? C.white : C.muted}
+                  />
+                  <Txt
+                    size={12}
+                    color={isUser ? C.white : C.muted}
+                    numberOfLines={1}
+                    style={{ flexShrink: 1 }}
+                  >
+                    {file.name}
+                  </Txt>
+                </View>
+              ))}
+            </View>
+          )}
+          {isUser && (
+            <Txt
+              size={9}
+              color={item.status === 'failed' ? '#FFB4B4' : '#B9B9B9'}
+              style={{ alignSelf: 'flex-end', marginTop: 3 }}
+            >
+              {item.status === 'failed' ? 'Por confirmar' : time}
+            </Txt>
+          )}
+        </Pressable>
+        {!isUser &&
+          files.map((file) => (
+            <Pressable
+              key={file.id}
+              accessibilityRole="button"
+              accessibilityLabel={'Descarregar ' + file.name}
+              onPress={() => item.runId && onFile(item.runId, file.id)}
+              style={styles.file}
+            >
+              <Icon name="document-attach-outline" size={17} />
+              <Txt size={13} numberOfLines={1} style={{ flex: 1 }}>
+                {file.name}
+              </Txt>
+              <Icon name="download-outline" size={17} color={C.muted} />
+            </Pressable>
+          ))}
+        {!isUser && run && onActivity && (
+          <ActivityBar run={run} onOpen={onActivity} />
+        )}
+      </Animated.View>
+    );
+  },
+  (a, b) =>
+    a.files === b.files &&
+    a.run === b.run &&
+    a.animate === b.animate &&
+    a.onFile === b.onFile &&
+    a.onError === b.onError &&
+    a.onActivity === b.onActivity &&
+    a.item.id === b.item.id &&
+    a.item.content === b.item.content &&
+    a.item.role === b.item.role &&
+    a.item.status === b.item.status &&
+    a.item.createdAt === b.item.createdAt &&
+    a.item.attachments === b.item.attachments &&
+    a.item.runId === b.item.runId,
+);
 
 const styles = StyleSheet.create({
   message: { marginBottom: 18 },

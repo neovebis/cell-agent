@@ -1,33 +1,31 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  FlatList,
   Keyboard,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
-import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import {
+  KeyboardAvoidingView,
+  useKeyboardState,
+} from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { MessageBubble, ThinkingBubble } from '../components/ChatMessage';
+import { AgentList } from '../components/AgentList';
+import { useSharedValue } from 'react-native-reanimated';
+import { ChatTranscript, type ChatActions } from '../components/ChatTranscript';
+import { RunActivitySheet } from '../components/RunActivity';
+import { SwipeBack } from '../components/SwipeBack';
 import { ChatOptions } from '../components/ChatOptions';
 import { readAttachment, guessMime } from '../services/files';
 import { LiveMotion } from '../components/LiveMotion';
-import {
-  Card,
-  Icon,
-  PageTitle,
-  Pill,
-  RoundButton,
-  Txt,
-} from '../components/UI';
+import { Card, Icon, Pill, RoundButton, Txt } from '../components/UI';
 import { BODY_SHAPES } from '../motion/Motion';
 import { PALETTE } from '../motion/core/palette';
 import { C, R } from '../theme';
@@ -72,9 +70,14 @@ type Props = {
   onFile: (runId: string, fileId: string) => Promise<void>;
 };
 
-const NO_GENERATED_FILES: NonNullable<AgentRun['generatedFiles']> = [];
 export function ChatScreen(props: Props) {
   const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardState((state) => state.isVisible);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [composerHeight, setComposerHeight] = useState(64 + insets.bottom);
+  const composerTop = useSharedValue(0);
+  const latestProps = useRef(props);
+  latestProps.current = props;
   const [creationOpen, setCreationOpen] = useState(false);
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentName, setAgentName] = useState('');
@@ -98,24 +101,38 @@ export function ChatScreen(props: Props) {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [inputHeight, setInputHeight] = useState(40);
-  const replying =
-    props.busy ||
-    props.runs.some((run) => ['queued', 'running'].includes(run.status));
-  const attention = props.runs
-    .filter((run) => ['waiting_approval', 'paused'].includes(run.status))
-    .slice(-1)[0];
 
   // Animated rotation for '+' to 'x' button and smooth card entrance
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const menuAnim = useRef(new Animated.Value(0)).current;
 
-  const listRef = useRef<FlatList<AgentMessage>>(null);
-  const followLatest = useRef(true);
+  const actions = useMemo<ChatActions>(
+    () => ({
+      onFile: (runId, fileId) => void latestProps.current.onFile(runId, fileId),
+      onError: (message) => latestProps.current.onError(message),
+      onRetry: (id) => void latestProps.current.onRetry(id),
+      onDiscard: (id) => void latestProps.current.onDiscard(id),
+      onSettings: () => latestProps.current.onSettings(),
+      onActivity: () => latestProps.current.onActivity(),
+      onTrace: (id) => {
+        Keyboard.dismiss();
+        setSelectedRunId(id);
+      },
+    }),
+    [],
+  );
+  useEffect(() => {
+    if (selectedRunId) {
+      setShowTools(false);
+      rotateAnim.setValue(0);
+      menuAnim.setValue(0);
+    }
+  }, [selectedRunId, rotateAnim, menuAnim]);
 
   useEffect(() => {
     setShowTools(false);
     setAgentMenuOpen(false);
-    followLatest.current = true;
+    setSelectedRunId(null);
     rotateAnim.setValue(0);
     menuAnim.setValue(0);
   }, [props.activeAgent?.id]);
@@ -125,6 +142,7 @@ export function ChatScreen(props: Props) {
   }, [draft]);
 
   const toggleTools = () => {
+    if (!showTools) Keyboard.dismiss();
     if (showTools) {
       Animated.parallel([
         Animated.spring(rotateAnim, {
@@ -292,70 +310,12 @@ export function ChatScreen(props: Props) {
   if (!props.activeAgent) {
     return (
       <View style={{ flex: 1, backgroundColor: C.white }}>
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{
-            padding: 20,
-            paddingTop: 24,
-            paddingBottom: 104,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <PageTitle kicker="Espaço de Trabalho Ativo" title="Agentes" />
-            <RoundButton
-              icon="add"
-              label="Criar novo agente"
-              onPress={() => setCreationOpen(true)}
-              size={40}
-            />
-          </View>
-
-          <View style={{ gap: 12 }}>
-            {props.agents.map((agent) => (
-              <Pressable
-                key={agent.id}
-                accessibilityRole="button"
-                onPress={() => props.onOpen(agent)}
-                accessibilityLabel={`Abrir chat de ${agent.name}`}
-              >
-                <Card style={styles.agentCard}>
-                  <LiveMotion
-                    size={40}
-                    shape={agent.avatar?.shape ?? 'circle'}
-                    colorId={agent.avatar?.color ?? 'black'}
-                  />
-                  <View style={{ flex: 1, marginLeft: 12, gap: 3 }}>
-                    <Txt weight="600" size={16}>
-                      {agent.name}
-                    </Txt>
-                    <Txt color={C.muted} size={13} numberOfLines={1}>
-                      {agent.description}
-                    </Txt>
-                  </View>
-                </Card>
-              </Pressable>
-            ))}
-
-            {props.agents.length === 0 && (
-              <Card style={{ padding: 20, gap: 8 }}>
-                <Txt weight="700" size={17}>
-                  Nenhum agente no espaço
-                </Txt>
-                <Txt color={C.muted} size={14}>
-                  Os fluxos e agentes reais são carregados da tua base de dados
-                  Supabase. Toca no botão + acima para criar o teu primeiro
-                  agente autónomo.
-                </Txt>
-              </Card>
-            )}
-          </View>
-        </ScrollView>
+        <AgentList
+          agents={props.agents}
+          onOpen={props.onOpen}
+          onCreate={() => setCreationOpen(true)}
+          obscured={Boolean(creationOpen || props.obscured)}
+        />
 
         <Modal
           animationType="slide"
@@ -600,502 +560,396 @@ export function ChatScreen(props: Props) {
   const agent = props.activeAgent;
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: C.white }}
-      behavior="padding"
-      keyboardVerticalOffset={insets.top}
+    <SwipeBack
+      onBack={props.onBack}
+      ignoreBottom={composerHeight}
+      footerTop={composerTop}
+      disabled={Boolean(
+        props.obscured ||
+        agentMenuOpen ||
+        selectedRunId ||
+        libraryOpen ||
+        showTools,
+      )}
     >
-      <View testID="chat-header" pointerEvents="box-none" style={styles.header}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Voltar aos agentes"
-          onPress={props.onBack}
-          style={styles.headerTouch}
-        />
-        <View pointerEvents="box-none" style={styles.headerCenter}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: C.white }}
+        behavior="padding"
+        keyboardVerticalOffset={insets.top}
+      >
+        <View
+          testID="chat-header"
+          pointerEvents="box-none"
+          style={styles.header}
+        >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={'Opções de ' + agent.name}
-            accessibilityHint="Modelo, capacidades e tarefas"
+            accessibilityLabel="Voltar aos agentes"
+            onPress={props.onBack}
+            style={styles.headerTouch}
+          />
+          <View pointerEvents="box-none" style={styles.headerCenter}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={'Opções de ' + agent.name}
+              accessibilityHint="Modelo, capacidades e tarefas"
+              onPress={() => {
+                Keyboard.dismiss();
+                closeTools();
+                setAgentMenuOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.agentChip,
+                pressed && { backgroundColor: C.surface2 },
+              ]}
+            >
+              <LiveMotion
+                size={22}
+                active={
+                  !props.obscured && !agentMenuOpen && !selectedRunId && !draft
+                }
+                shape={agent.avatar?.shape ?? 'circle'}
+                colorId={agent.avatar?.color ?? 'black'}
+              />
+              <Txt
+                size={14}
+                weight="600"
+                numberOfLines={1}
+                style={{ flexShrink: 1 }}
+              >
+                {agent.name}
+              </Txt>
+            </Pressable>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Opções do agente"
             onPress={() => {
               Keyboard.dismiss();
               closeTools();
               setAgentMenuOpen(true);
             }}
-            style={({ pressed }) => [
-              styles.agentChip,
-              pressed && { backgroundColor: C.surface2 },
+            style={styles.headerTouch}
+          />
+        </View>
+        <ChatOptions
+          visible={agentMenuOpen}
+          agentName={agent.name}
+          isPrimary={props.primaryId === agent.id}
+          onClose={() => setAgentMenuOpen(false)}
+          onModel={props.onSettings}
+          onTools={props.onTools}
+          onActivity={props.onActivity}
+          onPrimary={() => void props.onPrimary(agent)}
+        />
+
+        <ChatTranscript
+          messages={props.messages}
+          runs={props.runs}
+          agent={agent}
+          busy={props.busy}
+          canSend={props.canSend}
+          obscured={Boolean(
+            props.obscured ||
+            agentMenuOpen ||
+            selectedRunId ||
+            libraryOpen ||
+            draft,
+          )}
+          composerHeight={composerHeight}
+          actions={actions}
+        />
+
+        {/* Anexos e biblioteca */}
+        {showTools && (
+          <Animated.View
+            style={[
+              styles.floatingMenuCard,
+              {
+                bottom: composerHeight + 6,
+                opacity: menuAnim,
+                transform: [
+                  {
+                    translateY: menuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [16, 0],
+                    }),
+                  },
+                  {
+                    scale: menuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.97, 1],
+                    }),
+                  },
+                ],
+              },
             ]}
           >
-            <LiveMotion
-              size={22}
-              active={!props.obscured}
-              shape={agent.avatar?.shape ?? 'circle'}
-              colorId={agent.avatar?.color ?? 'black'}
-            />
-            <Txt
-              size={14}
-              weight="600"
-              numberOfLines={1}
-              style={{ flexShrink: 1 }}
-            >
-              {agent.name}
-            </Txt>
-          </Pressable>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Opções do agente"
-          onPress={() => {
-            Keyboard.dismiss();
-            closeTools();
-            setAgentMenuOpen(true);
-          }}
-          style={styles.headerTouch}
-        />
-      </View>
-      <ChatOptions
-        visible={agentMenuOpen}
-        agentName={agent.name}
-        isPrimary={props.primaryId === agent.id}
-        onClose={() => setAgentMenuOpen(false)}
-        onModel={props.onSettings}
-        onTools={props.onTools}
-        onActivity={props.onActivity}
-        onPrimary={() => void props.onPrimary(agent)}
-      />
+            {/* 2. Câmara */}
+            <Pressable style={styles.menuItem} onPress={handleLaunchCamera}>
+              <View style={styles.menuIconCircle}>
+                <Icon name="camera-outline" size={18} color={C.ink} />
+              </View>
+              <View style={{ flex: 1, gap: 1 }}>
+                <Txt size={14} weight="500">
+                  Câmara
+                </Txt>
+                <Txt size={12} color={C.muted}>
+                  Tirar foto agora
+                </Txt>
+              </View>
+              <Icon name="chevron-forward" size={16} color={C.muted} />
+            </Pressable>
 
-      {/* Messages List */}
-      <FlatList
-        testID="chat-messages"
-        ref={listRef}
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingHorizontal: 18,
-          paddingTop: 68,
-          paddingBottom: 16,
-          flexGrow: 1,
-        }}
-        data={props.messages}
-        keyExtractor={(m) => m.id}
-        keyboardShouldPersistTaps="handled"
-        onScroll={(event) => {
-          const { layoutMeasurement, contentOffset, contentSize } =
-            event.nativeEvent;
-          followLatest.current =
-            contentSize.height - contentOffset.y - layoutMeasurement.height <
-            160;
-        }}
-        scrollEventThrottle={100}
-        onContentSizeChange={() => {
-          if (followLatest.current)
-            listRef.current?.scrollToEnd({ animated: true });
-        }}
-        renderItem={({ item, index }) => (
-          <View>
-            <MessageBubble
-              item={item}
-              animate={index >= props.messages.length - 2}
-              files={
-                props.runs.find((run) => run.id === item.runId)
-                  ?.generatedFiles || NO_GENERATED_FILES
-              }
-              onFile={props.onFile}
-              onError={props.onError}
-            />
-            {item.pendingId && item.status === 'failed' && (
-              <View style={{ alignItems: 'flex-end', paddingBottom: 6 }}>
-                <Txt size={12} color={C.error}>
-                  {item.error || 'O envio não ficou confirmado.'}
-                </Txt>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={props.busy}
-                  onPress={() => void props.onDiscard(item.pendingId!)}
-                  style={{ padding: 12, minHeight: 44 }}
-                >
-                  <Txt size={12} color={C.muted}>
-                    Remover envio local
-                  </Txt>
-                </Pressable>
+            <View style={styles.menuDivider} />
+
+            {/* 3. Imagem ou vídeo */}
+            <Pressable style={styles.menuItem} onPress={handleLaunchGallery}>
+              <View style={styles.menuIconCircle}>
+                <Icon name="image-outline" size={18} color={C.ink} />
               </View>
-            )}
-            {item.pendingId && item.status === 'failed' && (
-              <Pressable
-                accessibilityRole="button"
-                disabled={props.busy}
-                onPress={() => void props.onRetry(item.pendingId!)}
-                style={{ alignSelf: 'flex-end', padding: 12, marginBottom: 8 }}
-              >
-                <Txt size={12} color={C.error}>
-                  Repetir envio
+              <View style={{ flex: 1, gap: 1 }}>
+                <Txt size={14} weight="500">
+                  Imagem
                 </Txt>
-              </Pressable>
-            )}
-            {item.role === 'user' &&
-              item.runId &&
-              (
-                props.runs.find((run) => run.id === item.runId)?.files || []
-              ).map((file) => (
-                <Pressable
-                  key={file.id}
-                  accessibilityRole="button"
-                  onPress={() => void props.onFile(item.runId!, file.id)}
-                  style={{ padding: 12, minHeight: 44 }}
-                >
-                  <Txt size={12} color={C.muted}>
-                    Abrir anexo · {file.name}
-                  </Txt>
-                </Pressable>
-              ))}
-          </View>
-        )}
-        ListFooterComponent={
-          <View style={{ gap: 8, paddingTop: 2 }}>
-            {replying && <ThinkingBubble agentName={agent.name} />}
-            {!!attention && (
-              <View style={styles.attention}>
-                <Txt size={13} color={C.muted}>
-                  {attention.status === 'paused'
-                    ? 'Este pedido está em pausa.'
-                    : attention.approval?.reason ||
-                      'Preciso da tua autorização para continuar.'}
+                <Txt size={12} color={C.muted}>
+                  Da galeria
                 </Txt>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    attention.status === 'paused'
-                      ? 'Rever pedido em pausa'
-                      : 'Rever autorização'
-                  }
-                  onPress={props.onActivity}
-                  style={{
-                    alignSelf: 'flex-start',
-                    justifyContent: 'center',
-                    minHeight: 44,
-                  }}
-                >
-                  <Txt size={13} weight="500">
-                    {attention.status === 'paused'
-                      ? 'Rever pedido'
-                      : 'Rever autorização'}{' '}
-                    ↗
-                  </Txt>
-                </Pressable>
               </View>
-            )}
-          </View>
-        }
-        ListEmptyComponent={
-          !replying && !attention ? (
-            <View
-              style={{
-                flex: 1,
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                marginBottom: 40,
+              <Icon name="chevron-forward" size={16} color={C.muted} />
+            </Pressable>
+
+            <View style={styles.menuDivider} />
+
+            {/* 4. Ficheiros */}
+            <Pressable style={styles.menuItem} onPress={handlePickDocument}>
+              <View style={styles.menuIconCircle}>
+                <Icon name="attach-outline" size={18} color={C.ink} />
+              </View>
+              <View style={{ flex: 1, gap: 1 }}>
+                <Txt size={14} weight="500">
+                  Ficheiros
+                </Txt>
+                <Txt size={12} color={C.muted}>
+                  Documentos e dados
+                </Txt>
+              </View>
+              <Icon name="chevron-forward" size={16} color={C.muted} />
+            </Pressable>
+
+            <View style={styles.menuDivider} />
+
+            {/* 5. Capture */}
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => {
+                closeTools();
+                setLibraryOpen(true);
               }}
             >
-              <LiveMotion
-                size={52}
-                shape={agent.avatar?.shape ?? 'circle'}
-                colorId={agent.avatar?.color ?? 'black'}
-              />
-              <Txt size={22} weight="500" style={{ marginTop: 8 }}>
-                Como posso ajudar?
-              </Txt>
-              <Txt
-                size={13}
-                color={C.muted}
-                style={{
-                  textAlign: 'center',
-                  paddingHorizontal: 20,
-                  lineHeight: 20,
-                }}
-              >
-                {props.canSend
-                  ? 'Escreve uma mensagem ou partilha um ficheiro.'
-                  : 'Escolhe o modelo nas opções para começar.'}
-              </Txt>
-              {!props.canSend && (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={props.onSettings}
-                  style={{ minHeight: 44, justifyContent: 'center' }}
-                >
-                  <Txt size={13} weight="600">
-                    Escolher modelo
-                  </Txt>
-                </Pressable>
-              )}
-            </View>
-          ) : null
-        }
-      />
+              <View style={styles.menuIconCircle}>
+                <Icon name="aperture-outline" size={18} color={C.ink} />
+              </View>
+              <View style={{ flex: 1, gap: 1 }}>
+                <Txt size={14} weight="500">
+                  Capture
+                </Txt>
+                <Txt size={12} color={C.muted}>
+                  Enviar conteúdo capturado
+                </Txt>
+              </View>
+              <Icon name="chevron-forward" size={16} color={C.muted} />
+            </Pressable>
+          </Animated.View>
+        )}
 
-      {/* Anexos e biblioteca */}
-      {showTools && (
-        <Animated.View
+        <View
+          testID="chat-composer-overlay"
+          pointerEvents="box-none"
+          onLayout={(event) => {
+            composerTop.value = event.nativeEvent.layout.y;
+            const height = Math.ceil(event.nativeEvent.layout.height);
+            setComposerHeight((value) => (value === height ? value : height));
+          }}
           style={[
-            styles.floatingMenuCard,
-            {
-              opacity: menuAnim,
-              transform: [
-                {
-                  translateY: menuAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [16, 0],
-                  }),
-                },
-                {
-                  scale: menuAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.97, 1],
-                  }),
-                },
-              ],
-            },
+            styles.composerOverlay,
+            { paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 8) },
           ]}
         >
-          {/* 2. Câmara */}
-          <Pressable style={styles.menuItem} onPress={handleLaunchCamera}>
-            <View style={styles.menuIconCircle}>
-              <Icon name="camera-outline" size={18} color={C.ink} />
-            </View>
-            <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={14} weight="500">
-                Câmara
+          {/* Attachment Chip Preview */}
+          {attachment && (
+            <View style={styles.attachmentChip}>
+              <Icon name="attach-outline" size={16} color={C.ink} />
+              <Txt size={13} weight="600" numberOfLines={1} style={{ flex: 1 }}>
+                {attachment.name}
               </Txt>
-              <Txt size={12} color={C.muted}>
-                Tirar foto agora
-              </Txt>
+              <Pressable onPress={() => setAttachment(null)}>
+                <Icon name="close-circle" size={18} color={C.muted} />
+              </Pressable>
             </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
-          </Pressable>
+          )}
 
-          <View style={styles.menuDivider} />
-
-          {/* 3. Imagem ou vídeo */}
-          <Pressable style={styles.menuItem} onPress={handleLaunchGallery}>
-            <View style={styles.menuIconCircle}>
-              <Icon name="image-outline" size={18} color={C.ink} />
-            </View>
-            <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={14} weight="500">
-                Imagem
-              </Txt>
-              <Txt size={12} color={C.muted}>
-                Da galeria
-              </Txt>
-            </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
-          </Pressable>
-
-          <View style={styles.menuDivider} />
-
-          {/* 4. Ficheiros */}
-          <Pressable style={styles.menuItem} onPress={handlePickDocument}>
-            <View style={styles.menuIconCircle}>
-              <Icon name="attach-outline" size={18} color={C.ink} />
-            </View>
-            <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={14} weight="500">
-                Ficheiros
-              </Txt>
-              <Txt size={12} color={C.muted}>
-                Documentos e dados
-              </Txt>
-            </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
-          </Pressable>
-
-          <View style={styles.menuDivider} />
-
-          {/* 5. Capture */}
-          <Pressable
-            style={styles.menuItem}
-            onPress={() => {
-              closeTools();
-              setLibraryOpen(true);
-            }}
-          >
-            <View style={styles.menuIconCircle}>
-              <Icon name="aperture-outline" size={18} color={C.ink} />
-            </View>
-            <View style={{ flex: 1, gap: 1 }}>
-              <Txt size={14} weight="500">
-                Capture
-              </Txt>
-              <Txt size={12} color={C.muted}>
-                Enviar conteúdo capturado
-              </Txt>
-            </View>
-            <Icon name="chevron-forward" size={16} color={C.muted} />
-          </Pressable>
-        </Animated.View>
-      )}
-
-      {/* Attachment Chip Preview */}
-      {attachment && (
-        <View style={styles.attachmentChip}>
-          <Icon name="attach-outline" size={16} color={C.ink} />
-          <Txt size={13} weight="600" numberOfLines={1} style={{ flex: 1 }}>
-            {attachment.name}
-          </Txt>
-          <Pressable onPress={() => setAttachment(null)}>
-            <Icon name="close-circle" size={18} color={C.muted} />
-          </Pressable>
-        </View>
-      )}
-
-      <View testID="chat-composer" style={styles.composer}>
-        <Animated.View style={{ transform: [{ rotate: spin }] }}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Ferramentas e anexos"
-            hitSlop={2}
-            onPress={toggleTools}
-            style={[
-              styles.plusButton,
-              showTools && { backgroundColor: C.surface2 },
-            ]}
-          >
-            <Icon name="add" size={21} />
-          </Pressable>
-        </Animated.View>
-        <TextInput
-          value={draft}
-          onChangeText={(text) => {
-            latestDraft.current = text;
-            setDraft(text);
-          }}
-          multiline
-          placeholder="Mensagem…"
-          placeholderTextColor={C.muted}
-          style={[styles.composeInput, { height: inputHeight }]}
-          accessibilityLabel="Mensagem ao agente"
-          onContentSizeChange={(event) =>
-            setInputHeight(
-              Math.max(
-                40,
-                latestDraft.current
-                  ? Math.min(
-                      116,
-                      Math.ceil(event.nativeEvent.contentSize.height),
-                    )
-                  : 40,
-              ),
-            )
-          }
-        />
-        <RoundButton
-          icon="arrow-up"
-          label="Enviar mensagem"
-          primary={Boolean(draft.trim() || attachment) && !props.busy}
-          size={38}
-          disabled={
-            props.busy || !props.canSend || (!draft.trim() && !attachment)
-          }
-          onPress={async () => {
-            if ((!draft.trim() && !attachment) || props.busy) return;
-            const text = draft.trim();
-            latestDraft.current = '';
-            const curAtt = attachment;
-            setDraft('');
-            setAttachment(null);
-            closeTools();
-            try {
-              await props.onSend(text, curAtt || undefined);
-            } catch (error) {
-              if (!(error as { pendingId?: string })?.pendingId) {
+          <View testID="chat-composer" style={styles.composer}>
+            <Animated.View style={{ transform: [{ rotate: spin }] }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Ferramentas e anexos"
+                hitSlop={2}
+                onPress={toggleTools}
+                style={[
+                  styles.plusButton,
+                  showTools && { backgroundColor: C.surface2 },
+                ]}
+              >
+                <Icon name="add" size={21} />
+              </Pressable>
+            </Animated.View>
+            <TextInput
+              value={draft}
+              onChangeText={(text) => {
+                latestDraft.current = text;
                 setDraft(text);
-                setAttachment(curAtt);
+              }}
+              multiline
+              placeholder="Mensagem…"
+              placeholderTextColor={C.muted}
+              style={[styles.composeInput, { height: inputHeight }]}
+              accessibilityLabel="Mensagem ao agente"
+              onContentSizeChange={(event) =>
+                setInputHeight(
+                  Math.max(
+                    40,
+                    latestDraft.current
+                      ? Math.min(
+                          116,
+                          Math.ceil(event.nativeEvent.contentSize.height),
+                        )
+                      : 40,
+                  ),
+                )
               }
-            }
-          }}
+            />
+            <RoundButton
+              icon="arrow-up"
+              label="Enviar mensagem"
+              primary={Boolean(draft.trim() || attachment) && !props.busy}
+              size={38}
+              disabled={
+                props.busy || !props.canSend || (!draft.trim() && !attachment)
+              }
+              onPress={async () => {
+                if ((!draft.trim() && !attachment) || props.busy) return;
+                const text = draft.trim();
+                latestDraft.current = '';
+                const curAtt = attachment;
+                setDraft('');
+                setAttachment(null);
+                closeTools();
+                try {
+                  await props.onSend(text, curAtt || undefined);
+                } catch (error) {
+                  if (!(error as { pendingId?: string })?.pendingId) {
+                    setDraft(text);
+                    setAttachment(curAtt);
+                  }
+                }
+              }}
+            />
+          </View>
+        </View>
+        <RunActivitySheet
+          run={
+            props.runs.find(
+              (run) => run.id === selectedRunId && run.workflowId === agent.id,
+            ) || null
+          }
+          agentName={agent.name}
+          onClose={() => setSelectedRunId(null)}
+          onFile={actions.onFile}
+          onError={actions.onError}
         />
-      </View>
-
-      {/* Library Picker Modal */}
-      <Modal
-        visible={libraryOpen}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setLibraryOpen(false)}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: C.white,
-            padding: 20,
-            paddingTop: 28,
-          }}
+        {/* Library Picker Modal */}
+        <Modal
+          visible={libraryOpen}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setLibraryOpen(false)}
         >
           <View
             style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 20,
+              flex: 1,
+              backgroundColor: C.white,
+              padding: 20,
+              paddingTop: 28,
             }}
           >
-            <Txt size={24} weight="700">
-              Biblioteca Capture
-            </Txt>
-            <RoundButton
-              icon="close"
-              label="Fechar"
-              onPress={() => setLibraryOpen(false)}
-            />
-          </View>
-          <ScrollView style={{ flex: 1 }}>
-            {(props.captures || []).map((item) => (
-              <Pressable
-                key={item.id}
-                onPress={() => handleSelectCapture(item)}
-                style={{ marginBottom: 10 }}
-              >
-                <Card
-                  style={{
-                    padding: 16,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                  }}
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 20,
+              }}
+            >
+              <Txt size={24} weight="700">
+                Biblioteca Capture
+              </Txt>
+              <RoundButton
+                icon="close"
+                label="Fechar"
+                onPress={() => setLibraryOpen(false)}
+              />
+            </View>
+            <ScrollView style={{ flex: 1 }}>
+              {(props.captures || []).map((item) => (
+                <Pressable
+                  key={item.id}
+                  onPress={() => handleSelectCapture(item)}
+                  style={{ marginBottom: 10 }}
                 >
-                  <Icon
-                    name={
-                      item.type === 'image'
-                        ? 'image-outline'
-                        : item.type === 'document'
-                          ? 'document-outline'
-                          : 'text-outline'
-                    }
-                    size={24}
-                  />
-                  <View style={{ flex: 1 }}>
-                    <Txt weight="600" size={15}>
-                      {item.title}
-                    </Txt>
-                    <Txt color={C.muted} size={12}>
-                      {item.source} ·{' '}
-                      {new Date(item.createdAt).toLocaleDateString('pt-PT')}
-                    </Txt>
-                  </View>
-                  <Icon name="arrow-forward" size={18} color={C.muted} />
+                  <Card
+                    style={{
+                      padding: 16,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}
+                  >
+                    <Icon
+                      name={
+                        item.type === 'image'
+                          ? 'image-outline'
+                          : item.type === 'document'
+                            ? 'document-outline'
+                            : 'text-outline'
+                      }
+                      size={24}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Txt weight="600" size={15}>
+                        {item.title}
+                      </Txt>
+                      <Txt color={C.muted} size={12}>
+                        {item.source} ·{' '}
+                        {new Date(item.createdAt).toLocaleDateString('pt-PT')}
+                      </Txt>
+                    </View>
+                    <Icon name="arrow-forward" size={18} color={C.muted} />
+                  </Card>
+                </Pressable>
+              ))}
+              {(!props.captures || props.captures.length === 0) && (
+                <Card>
+                  <Txt color={C.muted}>
+                    Nenhum item capturado na biblioteca.
+                  </Txt>
                 </Card>
-              </Pressable>
-            ))}
-            {(!props.captures || props.captures.length === 0) && (
-              <Card>
-                <Txt color={C.muted}>Nenhum item capturado na biblioteca.</Txt>
-              </Card>
-            )}
-          </ScrollView>
-        </View>
-      </Modal>
-    </KeyboardAvoidingView>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
+      </KeyboardAvoidingView>
+    </SwipeBack>
   );
 }
 
@@ -1155,9 +1009,16 @@ const styles = StyleSheet.create({
   headerTouch: { width: 44, height: 44 },
   headerCenter: { flex: 1, alignItems: 'center', minWidth: 0 },
   attention: { gap: 1, paddingVertical: 4, marginBottom: 6 },
+  composerOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 3,
+    backgroundColor: 'transparent',
+  },
   composer: {
     marginHorizontal: 12,
-    marginBottom: 8,
     borderRadius: R.composer,
     borderWidth: 1,
     borderColor: C.border,
@@ -1201,6 +1062,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   floatingMenuCard: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 4,
     backgroundColor: C.white,
     borderRadius: 18,
     borderWidth: 1,
