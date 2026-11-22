@@ -947,6 +947,14 @@ try {
     await page
       .getByRole('button', { name: 'Descarregar relatorio.pdf', exact: true })
       .waitFor();
+    const pdfCard = page.getByRole('button', {
+      name: 'Descarregar relatorio.pdf',
+      exact: true,
+    });
+    assert.equal(await pdfCard.getByTestId('file-icon-pdf').count(), 1);
+    await pdfCard.getByText('PDF · 120 B', { exact: true }).waitFor();
+    const pdfIcon = await pdfCard.getByTestId('file-icon-pdf').boundingBox();
+    assert.ok(pdfIcon.width > 20 && pdfIcon.height >= 28);
     await page.screenshot({
       path: join(evidence, viewport.name + '-files.png'),
     });
@@ -1058,6 +1066,61 @@ try {
       .getByRole('button', { name: 'Voltar à conversa', exact: true })
       .click();
     await back.click();
+    await page.getByRole('tab', { name: 'Capture', exact: true }).click();
+    const capture = page.getByTestId('capture-card');
+    await capture.waitFor();
+    const captureText = capture.getByText(
+      'Foto, Documento, Galeria ou Texto · só neste dispositivo',
+      { exact: true },
+    );
+    const textLayout = await captureText.evaluate((el) => {
+      const card = el
+        .closest('[data-testid="capture-card"]')
+        .getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      return {
+        textAlign: getComputedStyle(el).textAlign,
+        card: {
+          x: card.x,
+          right: card.right,
+          bottom: card.bottom,
+          width: card.width,
+        },
+        lines: [...range.getClientRects()]
+          .filter((r) => r.width > 0)
+          .map((r) => ({
+            x: r.x,
+            right: r.right,
+            bottom: r.bottom,
+            width: r.width,
+          })),
+      };
+    });
+    assert.equal(textLayout.textAlign, 'center');
+    assert.ok(textLayout.lines.length > 0);
+    for (const line of textLayout.lines) {
+      assert.ok(
+        line.x >= textLayout.card.x + 20 &&
+          line.right <= textLayout.card.right - 20,
+        'Capture text stays within the card padding',
+      );
+      assert.ok(
+        Math.abs(
+          line.x +
+            line.width / 2 -
+            (textLayout.card.x + textLayout.card.width / 2),
+        ) < 2,
+        'Capture lines are visually centered',
+      );
+      assert.ok(
+        line.bottom <= textLayout.card.bottom - 20,
+        'Capture text is not clipped',
+      );
+    }
+    await page.screenshot({
+      path: join(evidence, viewport.name + '-capture.png'),
+    });
     await page.getByRole('tab', { name: 'Perfil', exact: true }).click();
     await page.getByText('Avançado', { exact: true }).click();
     for (const label of ['Cofre & Vars', 'Segurança', 'Endpoints']) {
@@ -1206,6 +1269,9 @@ try {
       send: true,
       approval: true,
       generatedFile: true,
+      fileTypeIcons: true,
+      captureTextAligned: true,
+      attachedActivityFooter: true,
       grantsPreserved: true,
       draftPreserved: true,
       modelCatalogRace: true,

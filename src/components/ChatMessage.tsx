@@ -1,5 +1,10 @@
-import React, { memo, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Pressable,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+} from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
@@ -15,6 +20,7 @@ import type { AgentMessage, AgentRun } from '../types';
 import { C } from '../theme';
 import { Icon, Txt } from './UI';
 import { ActivityBar } from './RunActivity';
+import { FileIcon, fileCaption } from './FileIcon';
 
 const NO_FILES: NonNullable<AgentRun['generatedFiles']> = [];
 
@@ -107,6 +113,14 @@ export const MessageBubble = memo(
     const [copyOpen, setCopyOpen] = useState(false);
     const [copied, setCopied] = useState(false);
     const isUser = item.role === 'user';
+    const hasActivity = !isUser && !!run && !!onActivity;
+    const [bodyWidth, setBodyWidth] = useState(0);
+    const measureBody = useCallback((event: LayoutChangeEvent) => {
+      const width = event.nativeEvent.layout.width;
+      setBodyWidth((previous) =>
+        Math.abs(previous - width) < 0.5 ? previous : width,
+      );
+    }, []);
     useEffect(() => {
       const config = {
         duration: reduced || !animate ? 0 : 240,
@@ -169,7 +183,13 @@ export const MessageBubble = memo(
             if (isUser) setCopyOpen((value) => !value);
           }}
           onLongPress={() => setCopyOpen(true)}
-          style={[styles.body, isUser ? styles.userBody : styles.agentBody]}
+          onLayout={hasActivity ? measureBody : undefined}
+          testID={isUser ? 'user-message-body' : 'agent-message-body'}
+          style={[
+            styles.body,
+            isUser ? styles.userBody : styles.agentBody,
+            hasActivity && { zIndex: 1 },
+          ]}
         >
           {!!item.content && (
             <Txt
@@ -184,9 +204,10 @@ export const MessageBubble = memo(
             <View style={{ gap: 5, marginTop: 7 }}>
               {item.attachments.map((file, index) => (
                 <View key={index} style={styles.attachment}>
-                  <Icon
-                    name="document-attach-outline"
-                    size={14}
+                  <FileIcon
+                    name={file.name}
+                    mimeType={file.mimeType}
+                    size={20}
                     color={isUser ? C.white : C.muted}
                   />
                   <Txt
@@ -211,6 +232,14 @@ export const MessageBubble = memo(
             </Txt>
           )}
         </Pressable>
+        {hasActivity && bodyWidth > 0 && run && onActivity && (
+          <ActivityBar
+            run={run}
+            onOpen={onActivity}
+            width={Math.max(24, bodyWidth - 12)}
+            attached
+          />
+        )}
         {!isUser &&
           files.map((file) => (
             <Pressable
@@ -220,16 +249,18 @@ export const MessageBubble = memo(
               onPress={() => item.runId && onFile(item.runId, file.id)}
               style={styles.file}
             >
-              <Icon name="document-attach-outline" size={17} />
-              <Txt size={13} numberOfLines={1} style={{ flex: 1 }}>
-                {file.name}
-              </Txt>
-              <Icon name="download-outline" size={17} color={C.muted} />
+              <FileIcon name={file.name} mimeType={file.mimeType} />
+              <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                <Txt size={13} numberOfLines={1}>
+                  {file.name}
+                </Txt>
+                <Txt size={10} color={C.muted} numberOfLines={1}>
+                  {fileCaption(file)}
+                </Txt>
+              </View>
+              <Icon name="download-outline" size={18} color={C.muted} />
             </Pressable>
           ))}
-        {!isUser && run && onActivity && (
-          <ActivityBar run={run} onOpen={onActivity} />
-        )}
       </Animated.View>
     );
   },
@@ -277,6 +308,7 @@ const styles = StyleSheet.create({
     borderColor: C.border,
     borderRadius: 13,
     paddingHorizontal: 12,
+    paddingVertical: 7,
     marginTop: 7,
   },
   copy: {

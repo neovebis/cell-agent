@@ -22,6 +22,7 @@ import { useSharedValue } from 'react-native-reanimated';
 import { ChatTranscript, type ChatActions } from '../components/ChatTranscript';
 import { RunActivitySheet } from '../components/RunActivity';
 import { SwipeBack } from '../components/SwipeBack';
+import { FileIcon } from '../components/FileIcon';
 import { ChatOptions } from '../components/ChatOptions';
 import { readAttachment, guessMime } from '../services/files';
 import { LiveMotion } from '../components/LiveMotion';
@@ -779,7 +780,11 @@ export function ChatScreen(props: Props) {
           {/* Attachment Chip Preview */}
           {attachment && (
             <View style={styles.attachmentChip}>
-              <Icon name="attach-outline" size={16} color={C.ink} />
+              <FileIcon
+                name={attachment.name}
+                mimeType={attachment.mimeType}
+                size={24}
+              />
               <Txt size={13} weight="600" numberOfLines={1} style={{ flex: 1 }}>
                 {attachment.name}
               </Txt>

@@ -35,15 +35,41 @@ export async function checkRunActivity(
   const bar = page.getByTestId('run-activity-bar').last();
   const shape = await bar.evaluate((el) => {
     const s = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    const body = el
+      .closest('[data-testid="agent-message"]')
+      .querySelector('[data-testid="agent-message-body"]')
+      .getBoundingClientRect();
     return {
       left: s.borderBottomLeftRadius,
       right: s.borderBottomRightRadius,
-      x: el.getBoundingClientRect().x,
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      bodyX: body.x,
+      bodyBottom: body.bottom,
+      bodyWidth: body.width,
     };
   });
   assert.equal(shape.left, '0px');
   assert.ok(parseFloat(shape.right) > 0);
-  assert.ok(shape.x <= 1, 'Activity strip must reach the left edge');
+  assert.ok(
+    Math.abs(shape.x - shape.bodyX) < 1,
+    'Activity footer aligns with its message',
+  );
+  assert.ok(
+    shape.width < shape.bodyWidth && shape.width >= shape.bodyWidth - 16,
+    'Activity footer is slightly narrower than its message',
+  );
+  assert.ok(
+    shape.y < shape.bodyBottom && shape.y >= shape.bodyBottom - 7,
+    'Activity footer tucks behind the bubble',
+  );
+  assert.ok(
+    shape.height <= 36 && shape.y + shape.height > shape.bodyBottom + 20,
+    'Footer stays visually slim',
+  );
   await bar.click();
   const sheet = page.getByTestId('run-activity-sheet');
   await sheet.waitFor();

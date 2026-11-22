@@ -175,15 +175,30 @@ export function CaptureScreen({
         <Pressable
           onPress={() => setCaptureOpen(true)}
           accessibilityLabel="Capturar novo conteúdo"
+          accessibilityRole="button"
+          testID="capture-card"
           style={styles.captureCard}
         >
           <View style={styles.cameraCircle}>
             <Icon name="camera-outline" size={40} color={C.white} />
           </View>
-          <Txt weight="600" size={29} style={{ marginTop: 28 }}>
+          <Txt
+            weight="600"
+            size={29}
+            style={{ marginTop: 28, textAlign: 'center' }}
+          >
             Capturar
           </Txt>
-          <Txt color={C.muted} size={16} style={{ marginTop: 8 }}>
+          <Txt
+            color={C.muted}
+            size={16}
+            style={{
+              marginTop: 8,
+              textAlign: 'center',
+              lineHeight: 22,
+              alignSelf: 'stretch',
+            }}
+          >
             Foto, Documento, Galeria ou Texto · só neste dispositivo
           </Txt>
         </Pressable>
@@ -537,7 +552,9 @@ export function CaptureScreen({
 
 const styles = StyleSheet.create({
   captureCard: {
-    height: 310,
+    minHeight: 310,
+    paddingHorizontal: 24,
+    paddingVertical: 32,
     borderRadius: R.card,
     backgroundColor: C.surface,
     borderWidth: 1,
@@ -597,6 +614,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
     fontSize: 16,
+    lineHeight: 22,
+    textAlignVertical: 'top',
     padding: 16,
     color: C.ink,
   },

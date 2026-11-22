@@ -26,37 +26,53 @@ import { Icon, RoundButton, Txt } from './UI';
 export const ActivityBar = memo(function ActivityBar({
   run,
   onOpen,
+  width,
+  attached = false,
 }: {
   run: AgentRun;
   onOpen: (id: string) => void;
+  width?: number;
+  attached?: boolean;
 }) {
+  const label = activityLabel(run);
+  const showLabel = width === undefined || width >= 100;
+  const showIcon = width === undefined || width >= 48;
   return (
     <Pressable
       testID="run-activity-bar"
       accessibilityRole="button"
-      accessibilityLabel="Ver atividade da resposta"
+      accessibilityLabel={'Ver atividade da resposta: ' + label}
       onPress={() => onOpen(run.id)}
-      hitSlop={{ top: 6, bottom: 6 }}
-      style={styles.bar}
+      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+      style={[
+        styles.bar,
+        attached && styles.attachedBar,
+        width !== undefined && { width },
+        !showLabel && { paddingHorizontal: 6, justifyContent: 'center' },
+      ]}
     >
-      <Icon
-        name={
-          ['queued', 'running'].includes(run.status)
-            ? 'time-outline'
-            : 'list-outline'
-        }
-        size={14}
-        color={C.muted}
-      />
-      <Txt
-        size={11}
-        color={C.muted}
-        numberOfLines={1}
-        style={{ flexShrink: 1 }}
-      >
-        {activityLabel(run)}
-      </Txt>
-      <Icon name="chevron-forward" size={12} color={C.muted} />
+      {showIcon && (
+        <Icon
+          name={
+            ['queued', 'running'].includes(run.status)
+              ? 'time-outline'
+              : 'list-outline'
+          }
+          size={13}
+          color={C.muted}
+        />
+      )}
+      {showLabel && (
+        <Txt
+          size={11}
+          color={C.muted}
+          numberOfLines={1}
+          style={{ flex: 1, lineHeight: 15 }}
+        >
+          {label}
+        </Txt>
+      )}
+      <Icon name="chevron-forward" size={11} color={C.muted} />
     </Pressable>
   );
 });
@@ -332,18 +348,20 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
     alignSelf: 'flex-start',
-    maxWidth: '92%',
-    minHeight: 32,
-    marginTop: 6,
-    marginLeft: -18,
-    paddingLeft: 29,
-    paddingRight: 12,
-    paddingVertical: 6,
-    backgroundColor: C.surface2,
-    borderTopRightRadius: 18,
-    borderBottomRightRadius: 18,
+    maxWidth: '86%',
+    minHeight: 28,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#EAEAEA',
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+  },
+  attachedBar: {
+    marginTop: -5,
+    paddingTop: 10,
+    minHeight: 33,
   },
   modal: {
     flex: 1,
