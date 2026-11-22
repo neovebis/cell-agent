@@ -5,17 +5,66 @@ import type { Tab } from '../types';
 import { Txt } from './UI';
 import { ReferenceTabIcon } from './ReferenceTabIcon';
 const tabs = ['Chat', 'Capture', 'Conectores', 'Atividade', 'Perfil'] as const;
-export function BottomNav({ tab, onSelect }: { tab: Tab; onSelect: (tab: Tab) => void }) {
-  return <View style={styles.shell}>{tabs.map(item => {
-    const active = tab === item;
-    return <Pressable key={item} accessibilityLabel={item} accessibilityRole="tab" accessibilityState={{selected: active}} onPress={() => onSelect(item)} style={[styles.item, active && styles.active]}>
-      <ReferenceTabIcon tab={item} active={active} size={25}/>
-      <Txt size={11} weight={active ? '600' : '400'} color={active ? C.ink : C.muted}>{item}</Txt>
-    </Pressable>;
-  })}</View>;
+export function BottomNav({
+  tab,
+  onSelect,
+}: {
+  tab: Tab;
+  onSelect: (tab: Tab) => void;
+}) {
+  return (
+    <View style={styles.shell}>
+      {tabs.map((item) => {
+        const active = tab === item;
+        return (
+          <Pressable
+            key={item}
+            accessibilityLabel={item}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            onPress={() => onSelect(item)}
+            style={[styles.item, active && styles.active]}
+          >
+            <ReferenceTabIcon tab={item} active={active} size={22} />
+            <Txt
+              size={10}
+              numberOfLines={1}
+              weight={active ? '500' : '400'}
+              color={active ? C.ink : C.muted}
+            >
+              {item}
+            </Txt>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 }
 const styles = StyleSheet.create({
-  shell: { position:'absolute', bottom: 10, left: 15, right: 15, height:TAB_HEIGHT, borderRadius: 34, borderWidth:1, borderColor:C.border, backgroundColor:C.surface, flexDirection:'row', padding:6, shadowColor:'#000', shadowOpacity:.14, shadowRadius:25, shadowOffset:{width:0,height:12}, elevation:13 },
-  item:{flex:1, borderRadius:29, alignItems:'center',justifyContent:'center',gap:4},
-  active:{backgroundColor:'#EFEFEF'}
+  shell: {
+    position: 'absolute',
+    bottom: 8,
+    left: 12,
+    right: 12,
+    height: TAB_HEIGHT,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+    flexDirection: 'row',
+    padding: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.07,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  item: {
+    flex: 1,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  active: { backgroundColor: '#EFEFEF' },
 });
