@@ -1,4 +1,4 @@
-# CELL AGENT Mobile · v0.3.4
+# CELL AGENT Mobile · v0.3.5
 
 Cliente React Native + Expo do CELL SYSTEM. Esta versão altera apenas a app móvel. Usa os contratos já existentes de Supabase Auth/REST e da API Cell Griot; não contém backend, migrações, alterações ao site ou deploys desses serviços.
 
@@ -17,7 +17,9 @@ As opções de Tarefas e Capacidades abrem painéis pessoais do agente atual, se
 
 A v0.3.3 corrige a gravação de perfis ainda não configurados: o cliente envia só os campos suportados pelo agente central, sem alterar permissões por omissão. Retira a faixa branca do chat, mantendo a cápsula flutuante, e encaminha os conectores para a API de dados existente, com a sessão e a chave publicável.
 
-A v0.3.4 acrescenta a faixa de atividade por resposta: ponta direita arredondada, esquerda até à margem e folha com operações, progresso publicado, saídas e fontes reais da execução. Os detalhes são carregados apenas ao abrir a folha e valores sensíveis comuns são ocultados. A folha não concede permissões nem executa ações. Um gesto horizontal para a direita volta à lista, preservando o rascunho; gestos curtos, deslocação vertical e interação no campo de texto não saem da conversa. A lista está isolada da escrita, os avatares fora do ecrã são suspensos e o campo de mensagem fica sobre o histórico com fundo exterior transparente.
+A v0.3.5 encaixa a faixa de atividade por baixo da bolha da resposta: esquerda reta alinhada com a mensagem, largura ligeiramente menor e ponta direita arredondada. Abre uma folha com operações, progresso publicado, saídas e fontes reais da execução. Os detalhes são carregados apenas ao abrir a folha e valores sensíveis comuns são ocultados. A folha não concede permissões nem executa ações. Um gesto horizontal para a direita volta à lista, preservando o rascunho; gestos curtos, deslocação vertical e interação no campo de texto não saem da conversa. A lista está isolada da escrita, os avatares fora do ecrã são suspensos e o campo de mensagem fica sobre o histórico com fundo exterior transparente.
+
+Os ficheiros no chat e os anexos pendentes usam ícones vetoriais por tipo, sem novas dependências ou pedidos de rede. Os ficheiros gerados mostram também formato e tamanho. O cartão Capture mantém o desenho e centra o texto com margens internas; cresce quando o tamanho do texto o exige, evitando cortes.
 
 ## Sessão e dados locais
 
@@ -55,9 +57,9 @@ A workflow Validate CELL AGENT instala e verifica apenas este repositório, expo
 
 O build UI isolado usa as variáveis de teste e a pasta build/test-web. O bundle de produto usa a configuração normal e fica separado. Evidência e screenshots ficam nos artefactos temporários da execução, não na fonte. Estes testes verificam o cliente e os contratos; não certificam o funcionamento dos executores de produção nem substituem o ensaio num dispositivo Android/iOS.
 
-A v0.3.4 mantém a chave e o armazenamento das versões 0.3.0, 0.3.1, 0.3.2 e 0.3.3. O código Android aumenta para 10, permitindo atualização sem desinstalar.
+A v0.3.5 mantém a chave e o armazenamento das versões 0.3.0, 0.3.1, 0.3.2, 0.3.3 e 0.3.4. O código Android aumenta para 11, permitindo atualização sem desinstalar.
 
-A v0.2.2 usa um certificado diferente e não permite atualização direta para a v0.3.4. As atualizações com a mesma assinatura são suportadas a partir da v0.3.0.
+A v0.2.2 usa um certificado diferente e não permite atualização direta para a v0.3.5. As atualizações com a mesma assinatura são suportadas a partir da v0.3.0.
 
 A workflow de APK continua separada e produz um APK release assinado, checksum, manifesto e metadados de assinatura nos artefactos, sem publicar releases automaticamente. Exige os GitHub Secrets KEYSTORE_BASE64, KEYSTORE_ALIAS, KEYSTORE_PASSWORD e KEY_PASSWORD; nunca gera uma chave de substituição durante o build. Compara o certificado com o APK v0.2.2 e regista se permite atualização direta. Produzir um APK de atualização exige a chave de assinatura correspondente à versão instalada.
 
